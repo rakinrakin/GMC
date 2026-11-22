@@ -1,4 +1,5 @@
 import type { CaptionId } from './scroll';
+import { ACCURACY_NOTE } from '../config';
 
 const STYLE_ID = 'story-overlays-style';
 const CSS = `
@@ -20,12 +21,22 @@ const CSS = `
 .story-top.is-on { opacity: 1; pointer-events: auto; }
 .story-top:hover { background: rgba(255,255,255,0.92); }
 .story-top:focus-visible { outline: 2px solid #4a5563; outline-offset: 2px; }
-@media (prefers-reduced-motion: reduce) { .story-caption, .story-top { transition: none; } }
+/* Accuracy note: pinned map only, hidden while a zone (and its panel, bottom-left) is shown. */
+.story-note { position: absolute; left: 24px; bottom: 26px; max-width: min(440px, calc(50vw - 120px));
+  margin: 0; font-size: 11px; line-height: 1.45; letter-spacing: 0.02em; color: rgba(74,85,99,0.72);
+  opacity: 0; transition: opacity 400ms ease; }
+.story-note.is-on { opacity: 1; }
+@media (max-width: 640px) {
+  .story-note { left: 16px; right: 16px; bottom: 76px; max-width: none; font-size: 10px; }
+}
+@media (prefers-reduced-motion: reduce) { .story-caption, .story-top, .story-note { transition: none; } }
 `;
 
 export interface Overlays {
   setCaption(c: CaptionId): void;
   setPinned(pinned: boolean): void;
+  /** A zone is selected: the accuracy note gives way to the zone panel. */
+  setSelected(selected: boolean): void;
   destroy(): void;
 }
 
@@ -69,6 +80,14 @@ export function createOverlays(root: HTMLElement, opts: { onBackToTop(): void })
   btn.addEventListener('click', () => opts.onBackToTop());
   wrap.appendChild(btn);
 
+  const note = document.createElement('p');
+  note.className = 'story-note';
+  note.textContent = ACCURACY_NOTE;
+  wrap.appendChild(note);
+  let pinnedNow = false;
+  let selectedNow = false;
+  const syncNote = () => note.classList.toggle('is-on', pinnedNow && !selectedNow);
+
   root.appendChild(wrap);
 
   const captions = Array.from(wrap.querySelectorAll<HTMLElement>('.story-caption'));
@@ -89,6 +108,12 @@ export function createOverlays(root: HTMLElement, opts: { onBackToTop(): void })
       btn.tabIndex = pinned ? 0 : -1;
       btn.setAttribute('aria-hidden', pinned ? 'false' : 'true');
       if (!pinned && document.activeElement === btn) btn.blur();
+      pinnedNow = pinned;
+      syncNote();
+    },
+    setSelected(selected) {
+      selectedNow = selected;
+      syncNote();
     },
     destroy() {
       wrap.remove();

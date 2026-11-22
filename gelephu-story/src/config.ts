@@ -256,3 +256,7 @@ export const CONFIG: {
   ],
   scrollVh: 4,
 };
+
+/** Shown in the page footer (pinned map) and in the no-WebGL fallback. */
+export const ACCURACY_NOTE =
+  'Terrain: open elevation data (~30 m), height ×2.6. GMC outline and zones traced from reference map, aligned to the Bhutan–India border (median error ~300 m); not survey-accurate.';

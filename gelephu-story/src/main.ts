@@ -12,10 +12,12 @@ import { pickZone } from './interact/picking';
 import { createHover } from './interact/hover';
 import { createMapUi } from './ui/panel';
 import zonesJson from '../public/assets/zones.json';
-import { Quaternion, Vector2, Vector3 } from 'three';
+import { LoadingManager, Quaternion, Vector2, Vector3 } from 'three';
 import { gsap } from 'gsap';
 import { createScroll, opacityCurves, approach, captionFor } from './story/scroll';
 import { createOverlays } from './story/overlays';
+import { createLoader } from './ui/loader';
+import { webglAvailable, showFallback } from './ui/fallback';
 
 /** Time constant of the camera easing toward the scroll position. */
 const SCROLL_SMOOTH_MS = 140;
@@ -23,18 +25,59 @@ const SCROLL_SMOOTH_MS = 140;
 const HOVER_PICK_MS = 50;
 /** Leaving the pin, the camera blends from its map pose (orbited / zone view) to the timeline. */
 const LEAVE_BLEND_MS = 800;
+/** Until the terrain has loaded the story cannot scroll past this t (the descent through the gap). */
+const TERRAIN_HOLD_T = 0.3;
+/** Share of the progress line for the cloud textures; the terrain fills the rest. */
+const CLOUD_SHARE = 0.3;
+/** The white panel fades after this even if a cloud texture never arrives. */
+const PANEL_MAX_MS = 8000;
 
 const app = document.getElementById('app');
-if (app) {
+if (app && !webglAvailable()) {
+  showFallback(document.body);
+} else if (app) {
+  try {
+    start(app);
+  } catch (err) {
+    // e.g. the WebGL context could not be created after all.
+    console.error('3D scene failed to start', err);
+    app.remove();
+    showFallback(document.body);
+  }
+}
+
+function start(app: HTMLElement) {
+  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+
+  // Loader first: a white panel over the page until sky and clouds can be shown.
+  const loader = createLoader(document.body);
+  let cloudF = 0;
+  let terrainF = 0;
+  const showProgress = () => loader.setProgress(CLOUD_SHARE * cloudF + (1 - CLOUD_SHARE) * terrainF);
+  const manager = new LoadingManager();
+  manager.onProgress = (_url, loaded, total) => {
+    cloudF = total > 0 ? loaded / total : 0;
+    showProgress();
+  };
+
   const canvas = document.createElement('canvas');
   app.appendChild(canvas);
 
   const stage = createStage(canvas);
   createSky(stage);
 
-  const clouds = createClouds(stage);
+  const clouds = createClouds(stage, undefined, { reducedMotion, manager });
+  const panelTimer = window.setTimeout(() => loader.hidePanel(), PANEL_MAX_MS);
+  void clouds.ready.then(() => {
+    cloudF = 1;
+    showProgress();
+    // One frame with the clouds in place before the panel starts to fade.
+    requestAnimationFrame(() => {
+      window.clearTimeout(panelTimer);
+      loader.hidePanel();
+    });
+  });
 
-  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
   // Hover label and highlight only for a fine pointer that can hover; touch taps select.
   const canHover = window.matchMedia?.('(hover: hover) and (pointer: fine)').matches ?? false;
 
@@ -72,9 +115,12 @@ if (app) {
     panel: ui,
     // The scroll timeline owns the camera until it has settled on the map key.
     cameraAllowed: () => live && shownT === 1,
-    duration: reducedMotion ? 0.01 : 1.6,
-    // The map caption gives the sky to the vision while a zone is selected.
-    onChange: (id) => overlays.setCaption(captionFor(shownT, id !== 0)),
+    duration: reducedMotion ? 0.6 : 1.6,
+    // The map caption gives the sky to the vision while a zone is selected; so does the footer note.
+    onChange: (id) => {
+      overlays.setCaption(captionFor(shownT, id !== 0));
+      overlays.setSelected(id !== 0);
+    },
   });
 
   function setHover(id: number) {
@@ -167,6 +213,8 @@ if (app) {
     },
     // The map zooms out first; only a gesture that starts fully zoomed out goes to the story.
     acceptUpwardWheel: () => !controls.consumedLastWheel(),
+    // Held at the descent until the terrain is in (dev ?t= jumps skip the hold).
+    maxT: initialT !== undefined ? 1 : TERRAIN_HOLD_T,
   });
 
   // The camera eases toward the scroll position; reduced motion follows it exactly.
@@ -195,13 +243,25 @@ if (app) {
   };
   applyT(shownT);
 
-  loadTerrain(stage, () => {})
+  loadTerrain(stage, (f) => {
+    terrainF = f;
+    showProgress();
+  })
     .then((t) => {
       terrain = t;
+      loader.done();
+      scroll.setMaxT(1);
       // A selection made (or finished) before the terrain arrived.
       selection.sync();
     })
-    .catch((err) => console.error('Terrain failed to load', err));
+    .catch((err) => {
+      console.error('Terrain failed to load', err);
+      stage.renderer.setAnimationLoop(null);
+      loader.done();
+      scroll.destroy();
+      app.remove();
+      showFallback(document.body);
+    });
 
   let last = performance.now();
   stage.renderer.setAnimationLoop((now: number) => {

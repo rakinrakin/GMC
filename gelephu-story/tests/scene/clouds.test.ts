@@ -239,3 +239,16 @@ describe('createClouds', () => {
     expect(mesh(sets.breakup.group).renderOrder).toBeGreaterThan(mesh(sets.deck.group).renderOrder);
   });
 });
+
+describe('cloud drift and readiness', () => {
+  it('reduced motion sets the cloud drift speed uniform to 0; default is the drift speed', () => {
+    const still = createClouds(fakeStage('desktop'), 7, { reducedMotion: true });
+    expect(still.uniforms.uDriftSpeed.value).toBe(0);
+    const moving = createClouds(fakeStage('desktop'));
+    expect(moving.uniforms.uDriftSpeed.value).toBeGreaterThan(0);
+  });
+  it('ready resolves once both cloud atlases have loaded', async () => {
+    const c = createClouds(fakeStage('desktop'));
+    await expect(c.ready).resolves.toBeUndefined();
+  });
+});

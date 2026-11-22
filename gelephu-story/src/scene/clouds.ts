@@ -86,7 +86,18 @@ export interface CloudSet {
 
 export interface Clouds {
   sets: { deck: CloudSet; breakup: CloudSet; veil: CloudSet };
+  /** uDriftSpeed: noise drift per second (0 under reduced motion). */
+  uniforms: { uDriftSpeed: { value: number } };
+  /** Resolves once both cloud atlases are built (the first frame worth showing). */
+  ready: Promise<void>;
   update(dtMs: number, camera: THREE.Camera): void;
+}
+
+export interface CloudOptions {
+  /** prefers-reduced-motion: the clouds hold still. */
+  reducedMotion?: boolean;
+  /** Loading manager for the cloud textures (drives the loader's progress line). */
+  manager?: THREE.LoadingManager;
 }
 
 export function mulberry32(seed: number): () => number {
@@ -333,6 +344,7 @@ const fragmentShader = /* glsl */ `
   uniform sampler2D uNoise;
   uniform vec4 uRects[5];
   uniform float uTime;
+  uniform float uDriftSpeed;
   uniform float uOpacity;
   uniform vec2 uNearFade;
   varying vec2 vUv;
@@ -342,7 +354,7 @@ const fragmentShader = /* glsl */ `
   flat varying int vTex;
   void main() {
     #include <logdepthbuf_fragment>
-    float s = uTime * ${DRIFT_SPEED.toFixed(3)};
+    float s = uTime * uDriftSpeed;
     vec2 n1 = texture2D(uNoise, vUv * 0.9 + vSeed + vec2(s, s * 0.6)).rg;
     vec2 n2 = texture2D(uNoise, vUv * 2.3 + vSeed.yx - vec2(s * 0.7, s)).rg;
     vec2 uv = clamp(vUv + (n1 - 0.5) * 0.006 + (n2 - 0.5) * 0.012, 0.0, 1.0);
@@ -484,7 +496,7 @@ function buildSet(opts: {
   capacity: number;
   renderOrder: number;
   atlas: Atlas;
-  shared: { uTime: { value: number }; uNoise: { value: THREE.Texture } };
+  shared: { uTime: { value: number }; uDriftSpeed: { value: number }; uNoise: { value: THREE.Texture } };
   /** Camera (Blender-style) the cards are sorted back-to-front against. */
   sortFrom: Vector3Tuple;
   rnd: () => number;
@@ -504,6 +516,7 @@ function buildSet(opts: {
       uAspects: opts.atlas.uAspects,
       uNoise: opts.shared.uNoise,
       uTime: opts.shared.uTime,
+      uDriftSpeed: opts.shared.uDriftSpeed,
       uOpacity: opacity,
       uNearFade: { value: new THREE.Vector2(...NEAR_FADE) },
     },
@@ -577,15 +590,19 @@ function buildSet(opts: {
   };
 }
 
-export function createClouds(stage: Stage, seed = 7): Clouds {
+export function createClouds(stage: Stage, seed = 7, options: CloudOptions = {}): Clouds {
   const mobile = stage.tier === 'mobile';
   const scale = mobile ? CONFIG.mobileCloudScale : 1;
   const nDeck = Math.round(CONFIG.clouds.deck * scale);
   const nBreak = Math.round(CONFIG.clouds.breakup * scale);
   const nFore = Math.round(FOREGROUND_CARDS * scale);
 
-  const shared = { uTime: { value: 0 }, uNoise: { value: createNoiseTexture(seed) as THREE.Texture } };
-  const loader = new THREE.TextureLoader();
+  const shared = {
+    uTime: { value: 0 },
+    uDriftSpeed: { value: options.reducedMotion ? 0 : DRIFT_SPEED },
+    uNoise: { value: createNoiseTexture(seed) as THREE.Texture },
+  };
+  const loader = new THREE.TextureLoader(options.manager);
   const anisotropy = stage.renderer?.capabilities.getMaxAnisotropy() ?? 1;
   const sideAtlas = loadAtlas('side', loader, anisotropy);
   const topAtlas = loadAtlas('top', loader, anisotropy);
@@ -624,8 +641,12 @@ export function createClouds(stage: Stage, seed = 7): Clouds {
 
   stage.scene.add(deck.group, breakup.group, veil.group);
 
+  const ready = Promise.all([sideAtlas, topAtlas].map((a) => new Promise<void>((res) => a.onReady(res)))).then(() => {});
+
   return {
     sets: { deck, breakup, veil },
+    uniforms: { uDriftSpeed: shared.uDriftSpeed },
+    ready,
     update(dtMs: number) {
       shared.uTime.value += dtMs / 1000;
     },

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { CONFIG } from '../../src/config';
+import { CONFIG, ACCURACY_NOTE } from '../../src/config';
 import { createScroll, opacityCurves, approach, captionFor } from '../../src/story/scroll';
 import { createOverlays } from '../../src/story/overlays';
 
@@ -377,5 +377,80 @@ describe('createOverlays', () => {
     expect(onBackToTop).toHaveBeenCalledTimes(1);
     o.destroy();
     expect(root.children.length).toBe(0);
+  });
+});
+
+describe('createScroll max-t hold', () => {
+  const live: Array<{ destroy(): void }> = [];
+  afterEach(() => { while (live.length) live.pop()!.destroy(); });
+  const opts = (trackEl: HTMLElement, extra: Partial<Parameters<typeof createScroll>[0]> = {}) => ({
+    trackEl, onT: () => {}, onEnd: vi.fn(), onLeaveEnd: () => {},
+    selection: { deselect: () => {}, current: () => 0 }, ...extra,
+  });
+
+  it('holds the scroll at maxT until released, then lets it run to the end', () => {
+    const win = mockWindow(800);
+    win.userScroll(0);
+    const trackEl = document.createElement('div');
+    const o = opts(trackEl);
+    const scroll = createScroll(o);
+    live.push(scroll);
+    const max = 800 * CONFIG.scrollVh - 800;
+    scroll.setMaxT(0.3);
+    win.userScroll(max * 0.2);
+    expect(scroll.t()).toBeCloseTo(0.2, 5);
+    win.userScroll(max * 0.6);
+    expect(scroll.t()).toBeCloseTo(0.3, 5);
+    expect(win.y).toBeCloseTo(0.3 * max, 3);
+    win.userScroll(max);
+    expect(scroll.state()).toBe('scrolling');
+    expect(o.onEnd).not.toHaveBeenCalled();
+    scroll.setMaxT(1);
+    win.userScroll(max);
+    expect(scroll.state()).toBe('pinned');
+  });
+
+  it('setMaxT below the current position pulls it back (and unpins)', () => {
+    const win = mockWindow(800);
+    const max = 800 * CONFIG.scrollVh - 800;
+    win.userScroll(max);
+    const trackEl = document.createElement('div');
+    const scroll = createScroll(opts(trackEl));
+    live.push(scroll);
+    expect(scroll.state()).toBe('pinned');
+    scroll.setMaxT(0.3);
+    expect(scroll.state()).toBe('scrolling');
+    expect(scroll.t()).toBeCloseTo(0.3, 5);
+  });
+
+  it('the maxT option clamps initialT at creation', () => {
+    const win = mockWindow(800);
+    win.userScroll(0);
+    const trackEl = document.createElement('div');
+    const o = opts(trackEl, { initialT: 1, maxT: 0.3 });
+    const scroll = createScroll(o);
+    live.push(scroll);
+    expect(scroll.t()).toBeCloseTo(0.3, 5);
+    expect(scroll.state()).toBe('scrolling');
+    expect(o.onEnd).not.toHaveBeenCalled();
+  });
+});
+
+describe('createOverlays accuracy note', () => {
+  it('shows the note only while pinned with no zone selected', () => {
+    const root = document.createElement('div');
+    const o = createOverlays(root, { onBackToTop: () => {} });
+    const note = root.querySelector<HTMLElement>('.story-note')!;
+    expect(note.textContent).toBe(ACCURACY_NOTE);
+    expect(note.classList.contains('is-on')).toBe(false);
+    o.setPinned(true);
+    expect(note.classList.contains('is-on')).toBe(true);
+    o.setSelected(true);
+    expect(note.classList.contains('is-on')).toBe(false);
+    o.setSelected(false);
+    expect(note.classList.contains('is-on')).toBe(true);
+    o.setPinned(false);
+    expect(note.classList.contains('is-on')).toBe(false);
+    o.destroy();
   });
 });

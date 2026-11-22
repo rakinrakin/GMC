@@ -49,11 +49,18 @@ export interface ScrollOptions {
    * unpins. Absent: always accepted.
    */
   acceptUpwardWheel?: () => boolean;
+  /** Initial hold: the page cannot scroll past this t until setMaxT raises it (default 1). */
+  maxT?: number;
 }
 
 export interface Scroll {
   t(): number;
   state(): ScrollState;
+  /**
+   * Hold the page at or above no further than t (e.g. 0.3 while the terrain loads); 1 releases it.
+   * Lowering it below the current position pulls the page back (and unpins).
+   */
+  setMaxT(t: number): void;
   scrollToStart(): void;
   destroy(): void;
 }
@@ -76,12 +83,20 @@ export function createScroll(opts: ScrollOptions): Scroll {
   let armed = true;
   let t = 0;
   let lastMax = 0;
+  let maxT = clamp01(opts.maxT ?? 1);
   const wheelGesture = { last: -Infinity, used: false };
   const keyGesture = { last: -Infinity, used: false };
 
   const trackHeight = () => window.innerHeight * CONFIG.scrollVh;
   const maxScroll = () => Math.max(1, trackHeight() - window.innerHeight);
   const readT = () => clamp01(window.scrollY / maxScroll());
+  /** Pulls the page back to maxT if it is past it; true when it did. */
+  function hold(): boolean {
+    if (maxT >= 1 || readT() <= maxT + 1e-6) return false;
+    t = maxT;
+    window.scrollTo(0, maxT * maxScroll());
+    return true;
+  }
 
   function layout() {
     trackEl.style.height = `${trackHeight()}px`;
@@ -120,6 +135,7 @@ export function createScroll(opts: ScrollOptions): Scroll {
       t = 1;
       return;
     }
+    if (hold()) return;
     t = readT();
     opts.onT(t);
     if (t < END_T) armed = true;
@@ -194,7 +210,8 @@ export function createScroll(opts: ScrollOptions): Scroll {
   }
 
   layout();
-  if (opts.initialT !== undefined) window.scrollTo(0, clamp01(opts.initialT) * maxScroll());
+  if (opts.initialT !== undefined) window.scrollTo(0, Math.min(maxT, clamp01(opts.initialT)) * maxScroll());
+  else if (readT() > maxT) window.scrollTo(0, maxT * maxScroll()); // scroll restoration past the hold
   t = readT();
   opts.onT(t);
   if (t >= END_T) pin();
@@ -207,6 +224,18 @@ export function createScroll(opts: ScrollOptions): Scroll {
   return {
     t: () => t,
     state: () => state,
+    setMaxT(v: number) {
+      maxT = clamp01(v);
+      if (maxT >= 1 || t <= maxT) return;
+      if (state === 'pinned') {
+        if (selection.current() !== 0) selection.deselect();
+        unpin();
+      }
+      armed = true;
+      t = maxT;
+      window.scrollTo(0, maxT * maxScroll());
+      opts.onT(t);
+    },
     scrollToStart() {
       if (selection.current() !== 0) selection.deselect();
       unpin();
