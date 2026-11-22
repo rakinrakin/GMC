@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as THREE from 'three';
 import { CONFIG } from '../../src/config';
 import { toThree } from '../../src/math/coords';
-import { createClouds, FOREGROUND_CARDS, atlasLayout, GMC_GAP, inGmcGap } from '../../src/scene/clouds';
+import { createClouds, FOREGROUND_CARDS, atlasLayout, GMC_GAP, inGmcGap, footprintPoints } from '../../src/scene/clouds';
 import type { Stage } from '../../src/scene/stage';
 
 const loaded: string[] = [];
@@ -147,14 +147,47 @@ describe('createClouds', () => {
     }
   });
 
-  it('rejects cards whose disc reaches more than 30% of W into the gap', () => {
+  it('footprint: rays from F2 through centre and +-W/2 edge points land on z=0.6', () => {
+    const f2 = CONFIG.timeline[1].pos;
+    // A card straight below the camera lands right below it.
+    const [c] = footprintPoints(f2[0], f2[1], 15, 10);
+    expect(c[0]).toBeCloseTo(f2[0]);
+    expect(c[1]).toBeCloseTo(f2[1]);
+    // A card at y=-25, z=13 projects about 34 km further north on the ground.
+    const pts = footprintPoints(-4, -25, 13, 10);
+    expect(pts).toHaveLength(5);
+    expect(pts[0][1]).toBeCloseTo(-70 + 45 * (30 - 0.6) / (30 - 13));
+    // Near/far points straddle the centre along the view, left/right across it.
+    expect(pts[1][1]).toBeLessThan(pts[0][1]);
+    expect(pts[2][1]).toBeGreaterThan(pts[0][1]);
+    expect(pts[3][0]).toBeLessThan(pts[0][0]);
+    expect(pts[4][0]).toBeGreaterThan(pts[0][0]);
+  });
+
+  it('rejects cards with >30% of footprint points in the gap, or a centre in it', () => {
     const [cx, cy] = GMC_GAP.center;
-    const top = cy + GMC_GAP.semiAxes[1];
-    // 2 km above the top of the ellipse: W=10 reaches 3 km in (30%) -> allowed; W=20 reaches 8 km -> rejected.
-    expect(inGmcGap(cx, top + 2, 10)).toBe(false);
-    expect(inGmcGap(cx, top + 2, 20)).toBe(true);
-    expect(inGmcGap(cx, cy, 1)).toBe(true);
-    expect(inGmcGap(cx, top + 30, 34)).toBe(false);
+    expect(inGmcGap(cx, cy, 13, 1)).toBe(true); // centre inside
+    // South of the ellipse but projecting into it (the parallax case).
+    expect(inGmcGap(-4, -25, 13, 10)).toBe(true);
+    // Far west, clear of the gap.
+    expect(inGmcGap(-100, 60, 13, 20)).toBe(false);
+  });
+
+  it('no surviving main break-up card fails the footprint rule', () => {
+    const { sets } = createClouds(fakeStage('desktop'));
+    const m = mesh(sets.breakup.group);
+    const cs = cards(m);
+    const mat = new THREE.Matrix4();
+    let checked = 0;
+    for (let i = 0; i < m.count; i++) {
+      if (Math.abs(cs[i][1] - 0.95) < 1e-6) continue;
+      m.getMatrixAt(i, mat);
+      const p = new THREE.Vector3().setFromMatrixPosition(mat);
+      const w = new THREE.Vector3().setFromMatrixColumn(mat, 0).length();
+      expect(inGmcGap(p.x, -p.z, p.y, w)).toBe(false);
+      checked++;
+    }
+    expect(checked).toBe(CONFIG.clouds.breakup);
   });
 
   it('setOpacity drives the shared opacity uniform and the deck mist floor', () => {

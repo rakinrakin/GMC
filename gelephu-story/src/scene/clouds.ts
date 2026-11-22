@@ -24,25 +24,50 @@ const TOP_OPACITIES = [0.85, 1.0];
 const FOREGROUND_OPACITY = 0.95;
 
 /**
- * Opening over GMC in the break-up field (Blender-style km). Main cards are re-drawn if their
- * centre is inside, or if their disc (radius W/2) reaches more than maxOverlap * W into it.
+ * Opening over GMC in the break-up field (Blender-style km). A main card is re-drawn if its centre
+ * is inside the ellipse, or if more than maxFootprint of its ground footprint points (as seen from
+ * the F2 camera) land inside it, so cards nearer the camera cannot cover the bowl by parallax.
  */
-export const GMC_GAP = { center: [-2, -2] as [number, number], semiAxes: [42, 16] as [number, number], maxOverlap: 0.3 };
-const GAP_SAMPLES = 256;
-const GAP_BOUNDARY = Array.from({ length: GAP_SAMPLES }, (_, i) => {
-  const t = (i / GAP_SAMPLES) * Math.PI * 2;
-  return [GMC_GAP.center[0] + GMC_GAP.semiAxes[0] * Math.cos(t), GMC_GAP.center[1] + GMC_GAP.semiAxes[1] * Math.sin(t)];
-});
+export const GMC_GAP = {
+  center: [-2, -2] as [number, number],
+  semiAxes: [42, 16] as [number, number],
+  groundZ: 0.6,
+  maxFootprint: 0.3,
+};
 
-/** True if a card at (x, y) with width w intrudes into the GMC gap beyond the allowed overlap. */
-export function inGmcGap(x: number, y: number, w: number): boolean {
+const F2_KEY = CONFIG.timeline.find((k) => k.t === 0.45) ?? CONFIG.timeline[1];
+
+function inEllipse(x: number, y: number): boolean {
   const [cx, cy] = GMC_GAP.center;
   const [a, b] = GMC_GAP.semiAxes;
-  if (((x - cx) / a) ** 2 + ((y - cy) / b) ** 2 <= 1) return true;
-  let d = Infinity;
-  for (const [ex, ey] of GAP_BOUNDARY) d = Math.min(d, Math.hypot(x - ex, y - ey));
-  // Depth the disc reaches past the boundary: w/2 - d.
-  return w / 2 - d > GMC_GAP.maxOverlap * w;
+  return ((x - cx) / a) ** 2 + ((y - cy) / b) ** 2 <= 1;
+}
+
+/**
+ * Ground points (z = GMC_GAP.groundZ) hit by rays from the F2 camera through a card's centre and
+ * its edge points at +-W/2 along the camera's horizontal view direction (near, far) and across it
+ * (left, right). Order: centre, near, far, left, right. Blender-style coords.
+ */
+export function footprintPoints(x: number, y: number, z: number, w: number): Array<[number, number]> {
+  const [px, py, pz] = F2_KEY.pos;
+  let fx = F2_KEY.target[0] - px, fy = F2_KEY.target[1] - py;
+  const fl = Math.hypot(fx, fy) || 1;
+  fx /= fl; fy /= fl;
+  const rx = fy, ry = -fx; // right of the view direction
+  const h = w / 2;
+  const pts: Array<[number, number]> = [
+    [x, y], [x - fx * h, y - fy * h], [x + fx * h, y + fy * h], [x - rx * h, y - ry * h], [x + rx * h, y + ry * h],
+  ];
+  const s = (pz - GMC_GAP.groundZ) / Math.max(pz - z, 1e-3);
+  return pts.map(([qx, qy]) => [px + (qx - px) * s, py + (qy - py) * s]);
+}
+
+/** True if a card (Blender-style centre x, y, z, width w) would cover the GMC gap. */
+export function inGmcGap(x: number, y: number, z: number, w: number): boolean {
+  if (inEllipse(x, y)) return true;
+  const pts = footprintPoints(x, y, z, w);
+  const inside = pts.filter(([qx, qy]) => inEllipse(qx, qy)).length;
+  return inside / pts.length > GMC_GAP.maxFootprint;
 }
 
 const RENDER_ORDER = { floor: 0.9, deck: 1, breakup: 2, veil: 3 };
@@ -423,15 +448,16 @@ function breakupCards(n: number, nFore: number, rnd: () => number): Card[] {
   const cards: Card[] = [];
   for (let i = 0; i < n; i++) {
     // Re-draw (seeded, so still deterministic) until the card stays out of the GMC gap.
-    let x: number, y: number, w: number;
+    let x: number, y: number, z: number, w: number;
     do {
       x = u(-110, 100);
       y = u(-65, 90);
+      z = u(11.5, 15.5);
       w = u(14, 34);
-    } while (inGmcGap(x, y, w));
+    } while (inGmcGap(x, y, z, w));
     cards.push({
       letter: letters[i],
-      pos: [x, y, u(11.5, 15.5)],
+      pos: [x, y, z],
       width: w,
       yaw: rnd() * Math.PI * 2,
       opacity: TOP_OPACITIES[Math.floor(rnd() * TOP_OPACITIES.length)],
