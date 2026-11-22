@@ -1,0 +1,41 @@
+{
+  "id": "gmc_map_m1-terrain",
+  "version": 1,
+  "category": "map",
+  "author": "A",
+  "status": "review",
+  "anchorUTM46N": [
+    232001.6,
+    2982746.2
+  ],
+  "anchorMapXZ": [
+    0,
+    0
+  ],
+  "footprintM": [
+    98370,
+    42210
+  ],
+  "heightM": 7022,
+  "heroScale": null,
+  "heroYaw": 0,
+  "tris": {
+    "lod0": 888596,
+    "lod1": 0,
+    "lod2": 0
+  },
+  "materials": [
+    "M_terrain",
+    "M_skirt",
+    "M_water"
+  ],
+  "sourceRefs": [
+    "references/arena/01-terrain-slab-overview.jpg",
+    "references/big/axo-1-terrain-rivers.jpg"
+  ],
+  "notes": "Extent approximate (lon 89.80-90.80, lat 26.74-27.14), NOT the official GMC boundary. Elevation: Copernicus GLO-30 (a surface model, so forest canopy is included). Land cover: ESA WorldCover 2021. Vertical exaggeration 1.5x; y=0 is sea level x1.5. Corner radius 3 km. Skirt depth 2,533 m. GLB skirt is plain umber-earth: strata live in the Blender file / kit createSkirt(). AO not baked yet; LOD1 not made yet. M2 rivers: traced from the DEM (60 m priority-flood + D8; min catchment 4 km\u00b2, 12 km\u00b2 on the plain), widths 30-260 m from catchment and WorldCover water; terrain carved ~2.5 m (real) below the water. Gravel beds are still painted into the terrain albedo, not a separate mesh.",
+  "layers": {
+    "L_terrain": "terrain_surface (790k tris) + terrain_skirt",
+    "L_water_rivers": "river_channels: 237 channels, 84.5k tris, one draw call"
+  }
+}

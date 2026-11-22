@@ -1,0 +1,201 @@
+{
+  "version": 1,
+  "overview": {
+    "az": 160,
+    "el": 42,
+    "dist": 150000,
+    "fov": 30,
+    "target": [
+      0,
+      0,
+      0
+    ]
+  },
+  "transition": {
+    "duration": 2.0,
+    "easing": "settle",
+    "arc": 0
+  },
+  "ramp": {
+    "zoom": 25,
+    "tilt": 6,
+    "turn": 10,
+    "pointY": 0.66
+  },
+  "look": {
+    "fogDensity": 3.5e-06,
+    "exposure": 1.25,
+    "bloomThreshold": 1.1,
+    "markerScale": 1.0,
+    "shadowNormalBias": 60,
+    "surround": true,
+    "surroundBrightness": 1.0,
+    "surroundTint": [
+      0.4,
+      0.5,
+      0.56
+    ],
+    "edgeBlend": 2500
+  },
+  "points": [
+    {
+      "id": "education",
+      "title": "Education and Knowledge",
+      "color": "#E07B4A",
+      "x": 11622,
+      "z": 10871,
+      "view": {
+        "az": 200,
+        "el": 32,
+        "dist": 9000,
+        "fov": 30
+      },
+      "body": "A university campus set on an inhabited bridge, with research and learning spaces that link the river terraces of the city's central neighbourhoods."
+    },
+    {
+      "id": "agritech",
+      "title": "Agri-Tech and Forestry",
+      "color": "#E3A33C",
+      "x": -344,
+      "z": 12285,
+      "view": {
+        "az": 170,
+        "el": 35,
+        "dist": 10000,
+        "fov": 30
+      },
+      "body": "Paddy terraces, hydroponic greenhouses and forest stewardship on the fertile plain around Sarpang, between the river corridors."
+    },
+    {
+      "id": "green",
+      "title": "Green Energy and Technologies",
+      "color": "#8FAF98",
+      "x": 29883,
+      "z": -8171,
+      "view": {
+        "az": 210,
+        "el": 30,
+        "dist": 12000,
+        "fov": 30
+      },
+      "body": "Run-of-river hydropower and clean-tech industry in the forested foothills, feeding the city's carbon-negative grid."
+    },
+    {
+      "id": "finance",
+      "title": "Finance and Digital Assets",
+      "color": "#6F9A7C",
+      "x": 21465,
+      "z": 16056,
+      "view": {
+        "az": 150,
+        "el": 34,
+        "dist": 8000,
+        "fov": 30
+      },
+      "body": "The financial district on the southern plain, where the urban footprint is densest, close to the India border crossing."
+    },
+    {
+      "id": "aviation",
+      "title": "Aviation and Logistics",
+      "color": "#3E4F7A",
+      "x": 16084,
+      "z": 6526,
+      "view": {
+        "az": 190,
+        "el": 28,
+        "dist": 7000,
+        "fov": 30
+      },
+      "body": "Gelephu international airport: a timber terminal of diamond roof modules, with the runway raised across several rivers.",
+      "hero": {
+        "model": "../models/objects/gmc_obj_o1-airport_v01.glb",
+        "name": "Gelephu International Airport",
+        "lead": "A timber terminal that acts as a bridge, its runway raised across several rivers at the foot of the valley.",
+        "facts": [
+          [
+            "Sector",
+            "Aviation and Logistics"
+          ],
+          [
+            "Terminal",
+            "Nine diamond-lattice timber gables"
+          ],
+          [
+            "Length",
+            "574 m (model)"
+          ],
+          [
+            "Status",
+            "Concept model, BIG reference"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "tourism",
+      "title": "Tourism",
+      "color": "#4E7A5A",
+      "x": 11938,
+      "z": -4645,
+      "view": {
+        "az": 180,
+        "el": 30,
+        "dist": 11000,
+        "fov": 30
+      },
+      "body": "Trails into the subtropical foothills, where forest valleys rise toward the Himalaya above the city."
+    },
+    {
+      "id": "spiritual",
+      "title": "Spiritual",
+      "color": "#8E3A4A",
+      "x": -33052,
+      "z": 10992,
+      "view": {
+        "az": 160,
+        "el": 36,
+        "dist": 14000,
+        "fov": 30
+      },
+      "body": "The Sankosh Temple-Dam on the city's western border: a stepped dam face in a forested gorge, with a temple set into the cliff."
+    },
+    {
+      "id": "health",
+      "title": "Health and Wellness",
+      "color": "#B98A86",
+      "x": 25575,
+      "z": 9262,
+      "view": {
+        "az": 220,
+        "el": 32,
+        "dist": 8000,
+        "fov": 30
+      },
+      "body": "A healthcare centre joining Eastern and Western medicine, wrapped in bamboo slats on the eastern edge of Gelephu."
+    }
+  ],
+  "clouds": {
+    "on": true,
+    "map": 0.32,
+    "intro": 1.0,
+    "focus": 0.0,
+    "drift": 30
+  },
+  "intro": {
+    "on": true,
+    "descend": 3.4,
+    "reveal": 5.2
+  },
+  "hero": {
+    "scale": 8,
+    "float": 900,
+    "az": 200,
+    "el": 20,
+    "distK": 1.45,
+    "shift": 0.18,
+    "rise": 2.6,
+    "focusR": 3800,
+    "dim": 0.38
+  },
+  "theme": "dusk"
+}

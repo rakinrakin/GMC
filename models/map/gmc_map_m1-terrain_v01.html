@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GMC Map M1 Terrain</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #18130F; overflow: hidden; font: 13px/1.4 "Alegreya Sans", system-ui, sans-serif; color: #EFECE6; }
+  #hud { position: fixed; left: 16px; top: 16px; display: flex; gap: 8px; flex-wrap: wrap; z-index: 2; }
+  #hud button { background: rgba(24,19,15,.85); color: #EFECE6; border: 1px solid #3a2f26; border-radius: 999px; padding: 6px 12px; cursor: pointer; font: inherit; }
+  #hud button.on { border-color: #FE6417; }
+  #stat { position: fixed; left: 16px; bottom: 16px; font: 12px ui-monospace, monospace; color: #b9b1a6; z-index: 2; white-space: pre; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="hud">
+  <button data-mood="dusk" class="on">DUSK</button><button data-mood="day">DAY</button>
+  <button data-view="V1">V1 overview</button><button data-view="V3">V3 plan</button>
+</div>
+<div id="stat">LOADING::GLB</div>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { createStage } from '../../shared/gmc-kit.js';
+
+const stat = document.getElementById('stat');
+const stage = createStage({ container: document.body, mood: 'dusk', quality: 'low' });
+window.__stage = stage;
+const gltf = await new GLTFLoader().loadAsync('./gmc_map_m1-terrain_v01.glb');
+const root = gltf.scene.getObjectByName('gmc_map_m1-terrain') || gltf.scene;
+let tris = 0;
+root.traverse(o => { if (o.isMesh) { tris += o.geometry.index ? o.geometry.index.count / 3 : o.geometry.attributes.position.count / 3;
+  const m = o.material; if (m.map) { m.map.anisotropy = 8; } } });
+stage.add(root);
+stage.setView('V1');
+const box = new THREE.Box3().setFromObject(root), size = box.getSize(new THREE.Vector3());
+stat.textContent = `GLB::OK  TRIS::${Math.round(tris).toLocaleString()}\nSIZE::${(size.x/1000).toFixed(1)} x ${(size.z/1000).toFixed(1)} km  RELIEF::${Math.round(size.y)} m`;
+window.__ok = { tris, size: size.toArray() };
+
+for (const b of document.querySelectorAll('[data-mood]')) b.onclick = () => {
+  stage.setMood(b.dataset.mood);
+  document.querySelectorAll('[data-mood]').forEach(x => x.classList.toggle('on', x === b));
+};
+for (const b of document.querySelectorAll('[data-view]')) b.onclick = () => stage.setView(b.dataset.view);
+</script>
+</body>
+</html>

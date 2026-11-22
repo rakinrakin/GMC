@@ -1,0 +1,1033 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GMC Map Experience</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Alegreya+Sans:wght@400;500;700&family=Belleza&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --umber: #18130F; --night: #0B0E18; --sand: #EFECE6; --dim: #B9B1A6; --line: rgba(239,236,230,.14);
+    --panel: rgba(24,19,15,.86); --saffron: #FE6417; --maroon: #6D0033; --honey: #FFC450;
+    --settle: cubic-bezier(.16,1,.3,1); --cinema: cubic-bezier(.76,0,.24,1);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--umber); color: var(--sand);
+    font: 15px/1.45 "Alegreya Sans", system-ui, sans-serif; }
+  canvas { display: block; }
+  button { font: inherit; color: inherit; }
+
+  /* map markers (HTML overlay): diamond at rest; burst, grow and name on hover */
+  #pins { position: fixed; inset: 0; pointer-events: none; z-index: 3; transition: opacity 1.4s var(--settle); }
+  body.intro #pins, body.hero #pins { opacity: 0; }
+  body.intro .mk .hit, body.hero .mk .hit { pointer-events: none; }
+  .mk { position: absolute; left: 0; top: 0; width: 0; height: 0; transition: opacity .4s; --ease: cubic-bezier(.16,1,.3,1); }
+  .mk.hide { opacity: 0; } .mk.hide .hit { pointer-events: none; }
+  .mk .hit { position: absolute; left: -24px; top: -24px; width: 48px; height: 48px; border: 0; padding: 0; background: none;
+    border-radius: 50%; pointer-events: auto; cursor: pointer; z-index: 5; }
+  .mk.hot .hit, .mk.on .hit { left: -40px; top: -40px; width: 80px; height: 80px; }
+  .mk .hit:focus-visible { outline: 2px solid var(--sand); outline-offset: 4px; }
+  .mk .dia { position: absolute; left: -32px; top: -32px; width: 64px; height: 64px; border-radius: 3px;
+    background: color-mix(in srgb, var(--c) 42%, transparent); border: 1px solid color-mix(in srgb, var(--c) 80%, white 20%);
+    transform: rotate(45deg) scale(.3); box-shadow: 0 0 22px 2px color-mix(in srgb, var(--c) 70%, transparent);
+    transition: transform .55s var(--ease), background .35s, border-color .35s, box-shadow .5s; animation: idle 2.8s ease-in-out infinite; }
+  .mk .dia::after { content: ""; position: absolute; inset: 34%; background: #FFF8EC; border-radius: 2px;
+    box-shadow: 0 0 10px #FFF3DC; transition: opacity .25s; }
+  @keyframes idle { 50% { box-shadow: 0 0 34px 6px color-mix(in srgb, var(--c) 55%, transparent); } }
+  .mk.hot .dia, .mk.on .dia { transform: rotate(45deg) scale(.8); background: var(--sand); border-color: var(--sand);
+    box-shadow: 0 10px 40px rgba(11,14,24,.45), 0 0 0 1px rgba(255,255,255,.25); animation: none; transition-delay: .12s, .12s, .12s, .12s; }
+  .mk.hot .dia::after, .mk.on .dia::after { opacity: 0; }
+  .mk .ring { position: absolute; left: -66px; top: -66px; width: 132px; height: 132px; border-radius: 50%;
+    border: 1.5px solid color-mix(in srgb, var(--c) 85%, white 15%); box-shadow: 0 0 18px var(--c), inset 0 0 18px color-mix(in srgb, var(--c) 50%, transparent);
+    opacity: 0; transform: scale(.3); pointer-events: none; }
+  .mk.hot .ring { animation: burst .95s var(--ease) forwards; }
+  @keyframes burst { 0% { opacity: 0; transform: scale(.3); } 25% { opacity: 1; } 100% { opacity: 0; transform: scale(1.15); } }
+  .mk .sp { position: absolute; left: -2px; top: -2px; width: 4px; height: 4px; background: #FFF3DC; transform: rotate(45deg); opacity: 0; pointer-events: none; }
+  .mk.hot .sp { animation: spark .9s var(--ease) forwards; }
+  @keyframes spark { 0% { opacity: 0; transform: rotate(var(--a)) translateX(10px) rotate(45deg); } 20% { opacity: 1; }
+    100% { opacity: 0; transform: rotate(var(--a)) translateX(var(--r)) rotate(45deg); } }
+  .mk .sweep { position: absolute; left: -24px; top: -24px; width: 48px; height: 48px; border-radius: 50%;
+    border: 2px solid transparent; border-top-color: rgba(24,19,15,.28); opacity: 0; pointer-events: none; }
+  .mk.hot .sweep { animation: sweep .75s .3s cubic-bezier(.45,0,.55,1) forwards; }
+  @keyframes sweep { 0% { opacity: 0; transform: rotate(-40deg); } 20% { opacity: 1; } 100% { opacity: 0; transform: rotate(320deg); } }
+  .mk .dots { position: absolute; left: -15px; top: -3px; width: 30px; height: 6px; display: flex; justify-content: space-between; opacity: 0;
+    transition: opacity .2s; pointer-events: none; }
+  .mk .dots i { width: 6px; height: 6px; background: color-mix(in srgb, var(--c) 75%, #18130F); transform: rotate(45deg); border-radius: 1px; opacity: .25; }
+  .mk.hot .dots { opacity: 1; transition-delay: .85s; }
+  .mk.hot .dots i { animation: blink 1.2s .85s ease-in-out infinite; }
+  .mk.hot .dots i:nth-child(2) { animation-delay: 1.05s; } .mk.hot .dots i:nth-child(3) { animation-delay: 1.25s; }
+  @keyframes blink { 0%, 100% { opacity: .25; } 35% { opacity: 1; } }
+  .mk .lbl { position: absolute; top: 56px; left: 0; transform: translate(-50%, 8px); text-align: center; white-space: nowrap;
+    opacity: 0; filter: blur(8px); pointer-events: none; transition: opacity .25s, filter .25s, transform .3s; }
+  .mk .lbl span { display: inline-block; margin: 2px 0; padding: 2px 10px 3px; font: 500 19px/1.2 "Alegreya Sans", sans-serif; color: var(--sand);
+    background: color-mix(in srgb, var(--c) 62%, #18130F); border-radius: 3px; }
+  .mk.hot .lbl, .mk.on .lbl { opacity: 1; filter: blur(0); transform: translate(-50%, 0);
+    transition: opacity .5s .3s, filter .6s .3s, transform .6s .3s var(--ease); }
+  .mk.hot, .mk.on { z-index: 10000000 !important; }
+
+  /* stage 5: information set beside the floating object, anchored in 3D */
+  #lead { position: fixed; inset: 0; z-index: 3; pointer-events: none; width: 100%; height: 100%; }
+  #lead line { stroke: rgba(239,236,230,.55); stroke-width: 1; stroke-dasharray: 600; stroke-dashoffset: 600; transition: stroke-dashoffset 1.2s var(--settle); }
+  #lead circle { fill: var(--sand); opacity: 0; transition: opacity .6s .2s; }
+  body.info #lead line { stroke-dashoffset: 0; } body.info #lead circle { opacity: .9; }
+  #info { position: fixed; left: 0; top: 0; z-index: 4; width: min(400px, 36vw); pointer-events: none;
+    text-shadow: 0 1px 14px rgba(11,14,24,.85); }
+  #info .ln { overflow: hidden; padding-bottom: 2px; }
+  #info .ln > * { display: block; transform: translateY(105%); opacity: 0; filter: blur(6px);
+    transition: transform .5s var(--settle), opacity .4s, filter .4s; }
+  body.info #info .ln > * { transform: none; opacity: 1; filter: blur(0);
+    transition: transform 1s var(--settle) var(--d, 0s), opacity .9s var(--d, 0s), filter .9s var(--d, 0s); }
+  #info h2 { margin: 0; font: 400 clamp(30px, 3.4vw, 46px)/1.04 Belleza, serif; letter-spacing: .01em; }
+  #info .rule { height: 1px; margin: 16px 0 14px; background: linear-gradient(90deg, rgba(239,236,230,.7), rgba(239,236,230,0));
+    transform: scaleX(0); transform-origin: left; transition: transform .4s; }
+  body.info #info .rule { transform: scaleX(1); transition: transform 1.3s var(--settle) .35s; }
+  #info p { margin: 0; color: #DDD7CD; font-size: 16.5px; line-height: 1.5; }
+  #info dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 18px; margin: 16px 0 0; font-size: 14px; }
+  #info dt { color: var(--dim); } #info dd { margin: 0; }
+  #info .back { pointer-events: auto; margin-top: 20px; background: none; border: 0; border-bottom: 1px solid rgba(239,236,230,.4);
+    padding: 2px 0; cursor: pointer; color: var(--sand); font-size: 14px; }
+  #info .back:hover { border-color: var(--saffron); }
+  body:not(.info) #info .back { pointer-events: none; }
+
+  /* bright theme (Figma frames 1-3): dark ink on a white cloud world, soft sun glow */
+  #sun { position: fixed; inset: 0; z-index: 2; pointer-events: none; opacity: 0; transition: opacity 1.5s;
+    background: radial-gradient(circle at 30% 18%, rgba(255,250,238,.85) 0, rgba(255,246,228,.35) 9%, rgba(255,255,255,0) 30%),
+                radial-gradient(circle at 44% 46%, rgba(255,255,255,.18) 0, rgba(255,255,255,0) 6%),
+                radial-gradient(circle at 52% 58%, rgba(255,250,240,.12) 0, rgba(255,255,255,0) 4%); mix-blend-mode: screen; }
+  body.t-bright #sun { opacity: 1; }
+  body.t-bright #info { color: #18130F; text-shadow: 0 1px 12px rgba(255,255,255,.75); }
+  body.t-bright #info p { color: #3A322B; } body.t-bright #info dt { color: #6B6158; }
+  body.t-bright #info .rule { background: linear-gradient(90deg, rgba(24,19,15,.6), rgba(24,19,15,0)); }
+  body.t-bright #info .back { color: #18130F; border-bottom-color: rgba(24,19,15,.4); }
+  body.t-bright #lead line { stroke: rgba(24,19,15,.45); } body.t-bright #lead circle { fill: #18130F; }
+  body.t-bright #skip { color: #3A322B; text-shadow: 0 1px 10px rgba(255,255,255,.8); }
+  body.t-bright #loader { background: #ECEDEC; } body.t-bright #loader .t { color: #6B6158; }
+
+  #skip { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 5; font-size: 13px; color: var(--dim);
+    opacity: 0; transition: opacity 1s; pointer-events: none; text-shadow: 0 1px 10px rgba(11,14,24,.8); }
+  body.intro #skip { opacity: .85; transition-delay: 1.2s; }
+
+  #cp { position: fixed; right: 20px; top: 20px; bottom: 20px; z-index: 8; width: 320px; overflow-y: auto;
+    background: rgba(18,14,11,.94); border: 1px solid var(--line); border-radius: 18px; padding: 14px 16px 18px;
+    font-size: 12px; transition: opacity .3s, transform .4s var(--settle); scrollbar-width: thin; }
+  #cp.closed { opacity: 0; transform: translateX(24px); pointer-events: none; }
+  #cp h3 { margin: 16px 0 8px; font: 11px/1 "Alegreya Sans"; letter-spacing: .2em; text-transform: uppercase; color: var(--dim); }
+  #cp h3:first-child { margin-top: 2px; }
+  #cp .f { display: grid; grid-template-columns: 78px 1fr 58px; align-items: center; gap: 8px; margin: 5px 0; }
+  #cp label { color: var(--dim); }
+  #cp input[type=range] { width: 100%; accent-color: var(--saffron); }
+  #cp input[type=number], #cp select, #cp textarea { width: 100%; background: rgba(239,236,230,.06); border: 1px solid var(--line);
+    color: var(--sand); border-radius: 8px; padding: 4px 6px; font: 12px ui-monospace, monospace; }
+  #cp select { font-family: inherit; }
+  #cp .btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  #cp .btn { border: 1px solid var(--line); background: rgba(239,236,230,.06); border-radius: 999px; padding: 6px 10px; cursor: pointer; font-size: 12px; }
+  #cp .btn:hover { border-color: var(--sand); }
+  #cp .note { color: var(--dim); margin: 6px 0 0; line-height: 1.4; }
+  #cp textarea { height: 90px; resize: vertical; }
+  #cp .seg { display: flex; gap: 4px; }
+  #cp .seg .btn.on { border-color: var(--saffron); }
+  #toast { position: fixed; left: 50%; top: 20px; transform: translateX(-50%); z-index: 9; background: var(--panel);
+    border: 1px solid var(--saffron); border-radius: 999px; padding: 8px 16px; font-size: 13px; opacity: 0; transition: opacity .3s; pointer-events: none; }
+  #toast.show { opacity: 1; }
+  body.picking canvas { cursor: crosshair; }
+
+  #loader { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; background: var(--umber); transition: opacity 1.2s; }
+  #loader .t { font: 12px ui-monospace, monospace; letter-spacing: .14em; color: var(--dim); }
+  #loader.done { opacity: 0; pointer-events: none; }
+
+  @media (max-width: 760px) {
+    #cp { left: 16px; right: 16px; width: auto; top: auto; height: 55vh; }
+    #info { width: calc(100vw - 32px); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .mk .dia { animation: none; } .mk.hot .ring, .mk.hot .sp, .mk.hot .sweep { animation: none; }
+  }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body class="intro">
+<div id="loader"><div class="t" id="loadmsg">LOADING::MAP</div></div>
+<div id="sun" aria-hidden="true"></div>
+<div id="pins"></div>
+<svg id="lead" aria-hidden="true"><line id="lead-l" x1="0" y1="0" x2="0" y2="0"/><circle id="lead-c" r="3" cx="0" cy="0"/></svg>
+<section id="info" aria-live="polite">
+  <div class="ln"><h2 id="i-title"></h2></div>
+  <div class="rule"></div>
+  <div class="ln"><p id="i-lead" style="--d:.45s"></p></div>
+  <dl id="i-facts"></dl>
+  <div class="ln"><button class="back" id="i-back" style="--d:1.1s">Back to the map</button></div>
+</section>
+<div id="skip">Click or press Space to skip</div>
+
+<section id="cp" class="closed" aria-label="Control panel (press P)">
+  <h3>Journey</h3>
+  <div class="btns"><button class="btn" id="j-replay">Replay cloud entrance</button></div>
+  <div class="f"><label>On load</label><select id="j-on" style="grid-column: span 2"><option value="1">Start in the clouds</option><option value="0">Start on the map</option></select></div>
+  <div class="f"><label>Descend</label><input type="range" id="j-a" min="1" max="8" step=".1"><span id="j-a-v"></span></div>
+  <div class="f"><label>Reveal</label><input type="range" id="j-b" min="2" max="12" step=".1"><span id="j-b-v"></span></div>
+
+  <h3>Clouds</h3>
+  <div class="f"><label>Clouds</label><select id="c-on" style="grid-column: span 2"><option value="1">On</option><option value="0">Off</option></select></div>
+  <div class="f"><label>Over map</label><input type="range" id="c-map" min="0" max=".9" step=".01"><span id="c-map-v"></span></div>
+  <div class="f"><label>At object</label><input type="range" id="c-foc" min="0" max=".9" step=".01"><span id="c-foc-v"></span></div>
+  <div class="f"><label>Drift</label><input type="range" id="c-drift" min="0" max="200" step="1"><span id="c-drift-v"></span></div>
+
+  <h3>Floating object</h3>
+  <div class="f"><label>Scale</label><input type="range" id="h-scale" min="2" max="16" step=".5"><span id="h-scale-v"></span></div>
+  <div class="f"><label>Float</label><input type="range" id="h-float" min="200" max="3000" step="50"><span id="h-float-v"></span></div>
+  <div class="f"><label>Distance</label><input type="range" id="h-dist" min=".3" max="3" step=".05"><span id="h-dist-v"></span></div>
+  <div class="f"><label>Azimuth</label><input type="range" id="h-az" min="120" max="260" step="1"><span id="h-az-v"></span></div>
+  <div class="f"><label>Elevation</label><input type="range" id="h-el" min="4" max="45" step="1"><span id="h-el-v"></span></div>
+  <div class="f"><label>Lift</label><input type="range" id="h-shy" min="0" max=".35" step=".01"><span id="h-shy-v"></span></div>
+  <div class="f"><label>Text room</label><input type="range" id="h-shift" min="0" max=".35" step=".01"><span id="h-shift-v"></span></div>
+  <div class="f"><label>Map dim</label><input type="range" id="h-dim" min="0" max=".8" step=".01"><span id="h-dim-v"></span></div>
+
+  <h3>Look</h3>
+  <div class="seg" id="themeseg"><button class="btn" data-theme="bright">Bright clouds</button><button class="btn" data-theme="dusk">Dusk</button></div>
+  <p class="note">Bright follows the Figma frames. Switching applies that theme's cloud, camera and object settings.</p>
+  <div class="f"><label>Fog</label><input type="range" id="fog" min="0" max="20" step=".1"><span id="fog-v"></span></div>
+  <div class="f"><label>Exposure</label><input type="range" id="exp" min=".5" max="2" step=".01"><span id="exp-v"></span></div>
+  <div class="f"><label>Bloom cut</label><input type="range" id="blm" min=".6" max="2" step=".01"><span id="blm-v"></span></div>
+  <div class="f"><label>Pin size</label><input type="range" id="msc" min=".5" max="2" step=".05"><span id="msc-v"></span></div>
+  <div class="f"><label>Surround</label><select id="sur" style="grid-column: span 2"><option value="1">Show landscape around the map</option><option value="0">Hide (floating slab)</option></select></div>
+  <div class="f"><label>Surround tone</label><input type="range" id="surb" min=".3" max="2" step=".05"><span id="surb-v"></span></div>
+  <div class="f"><label>Edge blend</label><input type="range" id="edg" min="0" max="8000" step="100"><span id="edg-v"></span></div>
+
+  <h3>Transition</h3>
+  <div class="f"><label>Duration</label><input type="range" id="dur" min=".4" max="6" step=".1"><span id="dur-v"></span></div>
+  <div class="f"><label>Easing</label><select id="ease" style="grid-column: span 2">
+    <option value="cinema">Cinema (.76, 0, .24, 1)</option><option value="settle">Settle (.16, 1, .3, 1)</option>
+    <option value="smooth">Smooth (.45, 0, .55, 1)</option><option value="linear">Linear</option></select></div>
+  <div class="f"><label>Arc</label><input type="range" id="arc" min="0" max="1" step=".05"><span id="arc-v"></span></div>
+
+  <h3>Ramp shot (other points)</h3>
+  <div class="f"><label>Zoom</label><input type="range" id="r-zoom" min="0" max="60" step="1"><span id="r-zoom-v"></span></div>
+  <div class="f"><label>Tilt</label><input type="range" id="r-tilt" min="-20" max="20" step="1"><span id="r-tilt-v"></span></div>
+  <div class="f"><label>Turn</label><input type="range" id="r-turn" min="0" max="40" step="1"><span id="r-turn-v"></span></div>
+  <div class="f"><label>Point at</label><input type="range" id="r-y" min="40" max="85" step="1"><span id="r-y-v"></span></div>
+
+  <h3>Overview camera</h3>
+  <div class="f"><label>Azimuth</label><input type="range" id="o-az" min="0" max="360" step="1"><span id="o-az-v"></span></div>
+  <div class="f"><label>Elevation</label><input type="range" id="o-el" min="8" max="89" step="1"><span id="o-el-v"></span></div>
+  <div class="f"><label>Distance</label><input type="range" id="o-dist" min="20000" max="300000" step="1000"><span id="o-dist-v"></span></div>
+  <div class="f"><label>FOV</label><input type="range" id="o-fov" min="15" max="45" step="1"><span id="o-fov-v"></span></div>
+  <div class="btns"><button class="btn" id="o-cap">Use current camera</button><button class="btn" id="o-go">Fly to overview</button></div>
+
+  <h3>Point</h3>
+  <div class="f"><label>Edit</label><select id="p-sel" style="grid-column: span 2"></select></div>
+  <div class="f"><label>Title</label><input type="text" id="p-title" style="grid-column: span 2; background: rgba(239,236,230,.06); border: 1px solid var(--line); color: var(--sand); border-radius: 8px; padding: 4px 6px; font: inherit"></div>
+  <div class="f"><label>East (x)</label><input type="number" id="p-x" step="100" style="grid-column: span 2"></div>
+  <div class="f"><label>South (z)</label><input type="number" id="p-z" step="100" style="grid-column: span 2"></div>
+  <div class="btns"><button class="btn" id="p-pick">Pick position on map</button></div>
+  <div class="btns"><button class="btn" id="p-cap">Use current camera</button><button class="btn" id="p-clear">Back to ramp shot</button><button class="btn" id="p-go">Fly to point</button></div>
+  <p class="note" id="p-mode"></p>
+
+  <h3>Save</h3>
+  <div class="btns">
+    <button class="btn" id="s-copy">Copy JSON</button><button class="btn" id="s-dl">Download points.json</button>
+    <button class="btn" id="s-reset">Reset to file</button>
+  </div>
+  <p class="note">Edits are kept in this browser. Send me the JSON (or replace experience/points.json) to make them permanent.</p>
+  <textarea id="s-json" placeholder="Paste a points.json here and press Load"></textarea>
+  <div class="btns"><button class="btn" id="s-load">Load pasted JSON</button></div>
+</section>
+<div id="toast"></div>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { createStage, createPlinth, createGhostShadow, TOKENS } from '../shared/gmc-kit.js';
+import { createCloudLayer } from '../shared/gmc-clouds.js';
+
+const $ = id => document.getElementById(id);
+const DEG = Math.PI / 180;
+const STORE = 'gmc-experience-v1';
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+
+// ================================================================ config
+const fileCfg = await fetch('./points.json', { cache: 'no-store' }).then(r => r.json());
+let cfg = structuredClone(fileCfg);
+try { const s = localStorage.getItem(STORE); if (s) cfg = JSON.parse(s); } catch (e) { /* storage unavailable */ }
+function ensureDefaults() {
+  cfg.ramp = Object.assign({ zoom: 25, tilt: 6, turn: 10, pointY: 0.66 }, cfg.ramp || {});
+  cfg.clouds = Object.assign({}, fileCfg.clouds, cfg.clouds || {});
+  cfg.intro = Object.assign({}, fileCfg.intro, cfg.intro || {});
+  cfg.hero = Object.assign({}, fileCfg.hero, cfg.hero || {});
+  if (!cfg.theme) cfg.theme = fileCfg.theme || 'bright';
+  // older saved configs have no hero data on the points: take it from the file
+  for (const p of cfg.points) if (!p.hero) { const f = fileCfg.points.find(q => q.id === p.id); if (f?.hero) p.hero = f.hero; }
+}
+ensureDefaults();
+const save = () => { try { localStorage.setItem(STORE, JSON.stringify(cfg)); } catch (e) {} };
+
+// ================================================================ themes
+// bright: Figma frames 1-3 (white cloud world, slab floating in a cloud sea, airport large and front-on in the sky)
+// dusk:   the earlier look (night void, surround landscape, airport on a plinth over its location)
+const THEMES = {
+  // terrain keeps the low warm sun (dark olive relief, as in the frames); sky and clouds are white
+  bright: { mood: 'dusk', exposure: 1.12, fog: 3.2e-6, surround: false, cloudMood: 'day', cloudY: [-1500, 3100], cloudXZ: 1.65,
+    clear: { inset: 2600, soft: 6000, focusInset: -9000 },   // at the object the cloud sea pulls back past the slab edge clouds: { map: .62, intro: 1.0, focus: .62 }, introDensity: 1.6, mapDensity: .9,
+    overview: { az: 158, el: 30, dist: 118000, fov: 30, target: [0, 0, 2000] },
+    hero: { scale: 10, float: 2700, az: 195, el: 9, distK: 1.35, shift: .2, shiftY: .15, dim: .12, plinth: false, links: false },
+    intro: 'ridge', text: 'below' },
+  dusk: { mood: 'dusk', exposure: 1.25, fog: 3.5e-6, surround: true, cloudMood: 'dusk', cloudY: [2400, 6200], cloudXZ: 1,
+    clear: null, clouds: { map: .32, intro: 1.0, focus: 0 }, introDensity: 1.5, mapDensity: .55,
+    overview: { az: 160, el: 42, dist: 150000, fov: 30, target: [0, 0, 0] },
+    hero: { scale: 8, float: 900, az: 200, el: 20, distK: 1.45, shift: .18, shiftY: 0, dim: .38, plinth: true, links: true },
+    intro: 'deck', text: 'side' },
+};
+const theme = () => THEMES[cfg.theme] || THEMES.bright;
+// copy a theme's presets into the live settings (the panel then edits these)
+function loadThemePreset(name) {
+  const t = THEMES[name]; cfg.theme = name;
+  Object.assign(cfg.clouds, t.clouds); Object.assign(cfg.overview, structuredClone(t.overview));
+  Object.assign(cfg.hero, { scale: t.hero.scale, float: t.hero.float, az: t.hero.az, el: t.hero.el, distK: t.hero.distK, shift: t.hero.shift, shiftY: t.hero.shiftY, dim: t.hero.dim });
+  cfg.look.exposure = t.exposure; cfg.look.fogDensity = t.fog; cfg.look.surround = t.surround;
+}
+
+// first run of a theme (or after Reset to file): take its presets; later loads keep the viewer's tuning
+const PRESET_VER = 4;            // bump when presets change in a way saved settings should not override
+function ensureThemePreset() {
+  if (!String(cfg.presetFor || '').endsWith(`:${PRESET_VER}`)) cfg.theme = fileCfg.theme || 'dusk';   // a preset bump also restores the file's default theme
+  const key = `${cfg.theme}:${PRESET_VER}`; if (cfg.presetFor !== key) { loadThemePreset(cfg.theme); cfg.presetFor = key; } }
+ensureThemePreset();
+
+// ================================================================ stage (shared GMC kit: rig, materials, bloom)
+const stage = createStage({ container: document.body, mood: 'dusk', quality: 'high' });
+const { scene, controls, renderer } = stage;
+window.__stage = stage;
+Object.assign(controls, { minDistance: 600, maxDistance: 400000 });
+
+function applyLook() {
+  if (scene.fog) scene.fog.density = cfg.look.fogDensity;
+  renderer.toneMappingExposure = cfg.look.exposure;
+  stage.bloom.threshold = cfg.look.bloomThreshold ?? 1.1;       // bloom is for lamps only (design.md §1.3)
+}
+let mood = 'dusk';
+// bright sky: a white-grey gradient with a warm lift where the sun is (authored >1 because ACES pulls white to grey)
+const brightSky = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 512; const g = c.getContext('2d');
+  const lin = g.createLinearGradient(0, 0, 0, 512);
+  lin.addColorStop(0, '#f6f5f1'); lin.addColorStop(.55, '#e9eaea'); lin.addColorStop(1, '#d5d9dc');
+  g.fillStyle = lin; g.fillRect(0, 0, 512, 512);
+  const rad = g.createRadialGradient(150, 90, 0, 150, 90, 300);
+  rad.addColorStop(0, 'rgba(255,248,232,.9)'); rad.addColorStop(1, 'rgba(255,248,232,0)');
+  g.fillStyle = rad; g.fillRect(0, 0, 512, 512);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+})();
+function setMood(m) {
+  mood = m; stage.setMood(m); applyLook(); fixShadows(); document.body.classList.toggle('day', m === 'day');
+  if (cfg.theme === 'bright') { scene.background = brightSky; scene.backgroundIntensity = 1.55; if (scene.fog) scene.fog.color.set(0xe6e8e9); }
+  else scene.backgroundIntensity = 1;
+  clouds?.setMood(theme().cloudMood); heroMood();
+}
+function fixShadows() {      // the kit's shadow bias is tuned for objects; at map scale one shadow texel is ~25 m
+  const near = hero.state !== 'off';
+  scene.traverse(o => { if (o.isDirectionalLight && o.castShadow) {
+    o.shadow.bias = near ? -0.0002 : -0.0004; o.shadow.normalBias = near ? 2 : (cfg.look.shadowNormalBias ?? 60);
+    o.shadow.radius = 3; o.shadow.needsUpdate = true; } });
+}
+
+// ================================================================ map (M1 terrain + M2 rivers)
+$('loadmsg').textContent = 'LOADING::TERRAIN';
+const loader = new GLTFLoader();
+const gltf = await loader.loadAsync('../models/map/gmc_map_m1-terrain_v01.glb');
+const root = gltf.scene.getObjectByName('gmc_map_m1-terrain') || gltf.scene;
+root.traverse(o => { if (o.isMesh && o.material.map) o.material.map.anisotropy = renderer.capabilities.getMaxAnisotropy(); });
+stage.add(root);
+const terrain = root.getObjectByName('terrain_surface');
+terrain.geometry.computeBoundingBox();
+$('loadmsg').textContent = 'LOADING::RELIEF';
+try {
+  const nm = await new THREE.TextureLoader().loadAsync('../models/map/gmc_map_m1-terrain_v01_normal_os.png');
+  nm.flipY = false; nm.colorSpace = THREE.NoColorSpace; nm.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  Object.assign(terrain.material, { normalMap: nm, normalMapType: THREE.ObjectSpaceNormalMap });
+} catch (e) { console.warn('normal map missing', e); }
+const rivers = root.getObjectByName('river_channels');
+if (rivers) { rivers.position.y += 4; Object.assign(rivers.material, { polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6 }); rivers.renderOrder = 2; }
+
+// ================================================================ surround: wide, muted context terrain that fades into the void
+$('loadmsg').textContent = 'LOADING::SURROUND';
+const surround = new THREE.Group(); surround.name = 'L_context'; scene.add(surround);
+const skirt = root.getObjectByName('terrain_skirt');
+let ctxMeta = null;
+try {
+  ctxMeta = await fetch('../models/map/gmc_map_m2-context_v01.json').then(r => r.json());
+  const hb = new Float32Array(await fetch('../models/map/gmc_map_m2-context_v01_height.bin').then(r => r.arrayBuffer()));
+  const { nx, ny, cell, x0, z0 } = ctxMeta;
+  const pos = new Float32Array(nx * ny * 3), uv = new Float32Array(nx * ny * 2);
+  for (let r = 0; r < ny; r++) for (let c = 0; c < nx; c++) {
+    const i = r * nx + c;
+    pos[i * 3] = x0 + c * cell; pos[i * 3 + 1] = hb[i]; pos[i * 3 + 2] = z0 + r * cell;
+    uv[i * 2] = c / (nx - 1); uv[i * 2 + 1] = r / (ny - 1);
+  }
+  const idx = new Uint32Array((nx - 1) * (ny - 1) * 6); let k = 0;
+  for (let r = 0; r < ny - 1; r++) for (let c = 0; c < nx - 1; c++) {
+    const a = r * nx + c, b = a + 1, d = a + nx, e = d + 1;
+    idx[k++] = a; idx[k++] = d; idx[k++] = b; idx[k++] = b; idx[k++] = d; idx[k++] = e;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  g.setIndex(new THREE.BufferAttribute(idx, 1)); g.computeVertexNormals();
+  const tex = await new THREE.TextureLoader().loadAsync('../models/map/gmc_map_m2-context_v01.png');
+  tex.flipY = false; tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  const mat = new THREE.MeshStandardMaterial({ map: tex, transparent: true, roughness: 1, metalness: 0, envMapIntensity: .6 });
+  mat.name = 'M_context';
+  const mesh = new THREE.Mesh(g, mat); mesh.name = 'context_terrain'; mesh.renderOrder = -1;
+  surround.add(mesh);
+} catch (e) { console.warn('context terrain missing', e); }
+
+// ================================================================ terrain shader: soft edge + stage 3 focus highlight
+// soft edge: near the slab boundary, fade the slab's colours toward the surround's muted, tinted tone.
+// focus: inside a radius around the selected place, a technical overlay (survey grid, contour lines, a scan ring
+// sweeping outward, an outline circle); outside it, the map dims so the selection has visual priority.
+const TU = {
+  uEdgeOn: { value: 1 }, uEdgeBand: { value: 2500 }, uEdgeHalf: { value: new THREE.Vector2(...(ctxMeta?.slab_half || [49185, 21105])) },
+  uEdgeR: { value: 3000 }, uEdgeTint: { value: new THREE.Color(1, 1, 1) },
+  uFocusP: { value: new THREE.Vector2() }, uFocusR: { value: 3800 }, uFocusAmt: { value: 0 }, uFocusDim: { value: .38 },
+  uScanR: { value: 0 }, uLineCol: { value: new THREE.Color(TOKENS.sand) }, uScanCol: { value: new THREE.Color(TOKENS.saffron) },
+};
+terrain.material.onBeforeCompile = sh => {
+  Object.assign(sh.uniforms, TU);
+  sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vW;')
+    .replace('#include <project_vertex>', '#include <project_vertex>\nvW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+  sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+varying vec3 vW; uniform float uEdgeOn, uEdgeBand, uEdgeR; uniform vec2 uEdgeHalf; uniform vec3 uEdgeTint;
+uniform vec2 uFocusP; uniform float uFocusR, uFocusAmt, uFocusDim, uScanR; uniform vec3 uLineCol, uScanCol;
+float gridLine(float v, float w){ float f = abs(fract(v - .5) - .5) / max(fwidth(v), 1e-4); return 1. - smoothstep(0., w, f); }`)
+    .replace('#include <map_fragment>', `#include <map_fragment>
+{ vec2 q = abs(vW.xz) - (uEdgeHalf - uEdgeR);
+  float sd = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - uEdgeR;
+  float t = uEdgeOn * smoothstep(-uEdgeBand, 0.0, sd);
+  float l = dot(diffuseColor.rgb, vec3(.2126, .7152, .0722));
+  diffuseColor.rgb = mix(diffuseColor.rgb, mix(diffuseColor.rgb, vec3(l), .4) * .72 * uEdgeTint, t);
+  float fd = length(vW.xz - uFocusP), inside = 1. - smoothstep(uFocusR * .82, uFocusR, fd);
+  diffuseColor.rgb *= mix(1., 1. - uFocusDim, uFocusAmt * (1. - inside)); }`)
+    .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+if (uFocusAmt > .001) {
+  float fd = length(vW.xz - uFocusP), inside = 1. - smoothstep(uFocusR * .82, uFocusR, fd);
+  float falloff = inside * (1. - .55 * fd / uFocusR);
+  float grid = max(gridLine(vW.x / 250., 1.1), gridLine(vW.z / 250., 1.1));
+  float contour = gridLine(vW.y / 45., 1.0);
+  float scan = exp(-pow((fd - uScanR) / 60., 2.)) * step(fd, uFocusR);
+  float edge = exp(-pow((fd - uFocusR * .9) / 22., 2.));
+  totalEmissiveRadiance += uFocusAmt * (uLineCol * (grid * .10 + contour * .16) * falloff + uLineCol * edge * .45);
+}`);
+};
+terrain.material.needsUpdate = true;
+function applySurround() {
+  const on = cfg.look.surround !== false;
+  TU.uEdgeOn.value = on ? 1 : 0;
+  TU.uEdgeBand.value = cfg.look.edgeBlend ?? 2500;
+  const t = cfg.look.surroundTint ?? [.40, .50, .56], k = cfg.look.surroundBrightness ?? 1;
+  TU.uEdgeTint.value.setRGB(t[0] * k, t[1] * k, t[2] * k);
+  surround.visible = on;
+  if (skirt) skirt.visible = !on;
+  const m = surround.children[0]?.material;
+  if (m) m.color.setRGB(t[0] * k, t[1] * k, t[2] * k);          // cool, dim: the lit slab stays the hero
+}
+applySurround();
+
+// ================================================================ terrain height lookup
+const ray = new THREE.Raycaster();
+function groundY(x, z) {
+  ray.set(new THREE.Vector3(x, 20000, z), new THREE.Vector3(0, -1, 0));
+  const hit = ray.intersectObject(terrain, false)[0];
+  return hit ? hit.point.y : 0;
+}
+
+// ================================================================ stage 1 environment: volumetric clouds (E5, shared/gmc-clouds.js)
+$('loadmsg').textContent = 'LOADING::CLOUDS 0%';
+const span = ctxMeta ? [ctxMeta.x0, -ctxMeta.x0, ctxMeta.z0, -ctxMeta.z0] : [-105000, 105000, -72000, 72000];
+const clouds = await createCloudLayer(renderer, {
+  min: [span[0], 2400, span[2]], max: [span[1], 6200, span[3]], quality: 'high', drift: cfg.clouds.drift,   // reset by applyTheme()
+  onProgress: f => { $('loadmsg').textContent = `LOADING::CLOUDS ${Math.round(f * 100)}%`; } });
+clouds.setCirrus(0);                       // the map's sky is the GMC void, not a daylight dome
+// the layer's noise is tuned for a 60 km field; this one is ~210 km, so scale the cloud forms up with it
+clouds.uniforms.uWeatherScale.value = 60000; clouds.uniforms.uBaseScale.value = 16000; clouds.uniforms.uDetailScale.value = 2000;
+const mapDensity = () => theme().mapDensity, introDensity = () => theme().introDensity;
+let clearAmt = 0, clearInset = 2600;                  // bright theme: how clear the slab is of cloud (0 in the opening, 1 once revealed)
+let cloudCov = cfg.intro.on ? cfg.clouds.intro : cfg.clouds.map, cloudGoal = cloudCov;
+
+// ================================================================ stage 4 object: the airport, presented as a floating diorama
+const hero = { state: 'off', t0: 0, k: 0, from: 0, to: 0, point: -1 };
+{
+  $('loadmsg').textContent = 'LOADING::AIRPORT';
+  const hp = cfg.points.find(p => p.hero);
+  const g = await loader.loadAsync(hp.hero.model);
+  const model = g.scene.getObjectByName('gmc_obj_o1-airport') || g.scene;
+  // glTF stores colours in 0..1: put the HDR lamp glow back so the bloom picks it up (kit: honey x 2.2 at dusk)
+  const glowMats = new Set();
+  model.traverse(o => {
+    if (!o.isMesh) return;
+    const m = [].concat(o.material)[0];
+    if (m.name === 'M_window_glow') glowMats.add(m);
+    const glass = m.name === 'M_glass';
+    o.castShadow = !glass && m.name !== 'M_window_glow'; o.receiveShadow = !glass;
+    if (m.map) m.map.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  });
+  hero.glowMats = [...glowMats];
+  const bb = new THREE.Box3().setFromObject(model), c = bb.getCenter(new THREE.Vector3()), sz = bb.getSize(new THREE.Vector3());
+  model.position.x -= c.x; model.position.z -= c.z;                     // centre the footprint on the pivot
+  const holder = new THREE.Group(); holder.name = 'hero_airport';
+  const plinth = createPlinth(stage.materials, { width: sz.x * 1.1, depth: sz.z * 1.45, corner: .1, skirt: .05 });
+  holder.add(model, plinth);
+  hero.holder = holder; hero.size = sz; hero.model = model; hero.plinth = plinth;
+  hero.group = new THREE.Group(); hero.group.name = 'L_hero'; hero.group.visible = false;
+  hero.group.add(holder);
+  // ground link: ghost shadow + leader line + ring at the real location (design.md §6.3)
+  hero.ghost = createGhostShadow(sz.x, sz.z * 1.4);
+  hero.leaderMat = new THREE.MeshBasicMaterial({ color: TOKENS.saffron, transparent: true, opacity: .55, depthWrite: false });
+  hero.leader = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 10, 1, true).translate(0, .5, 0), hero.leaderMat);
+  hero.ring = new THREE.Mesh(new THREE.RingGeometry(.988, 1, 160).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: TOKENS.saffron, transparent: true, opacity: .9, depthWrite: false }));
+  hero.ring.renderOrder = 3; hero.leader.renderOrder = 3;
+  hero.group.add(hero.ghost, hero.leader, hero.ring);
+  scene.add(hero.group);
+}
+function heroMood() {
+  for (const m of hero.glowMats || []) m.color.set(mood === 'dusk' ? TOKENS.honey : 0x2A241F).multiplyScalar(mood === 'dusk' ? 2.2 : 1);
+}
+heroMood();
+
+// ================================================================ render pipeline: scene (with depth) -> clouds -> composite -> bloom -> output
+const pr = () => renderer.getPixelRatio();
+const W = () => Math.round(innerWidth * pr()), H = () => Math.round(innerHeight * pr());
+const sceneRT = new THREE.WebGLRenderTarget(W(), H(), { type: THREE.HalfFloatType, samples: 4, depthTexture: new THREE.DepthTexture(W(), H()) });
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(W(), H(), { type: THREE.HalfFloatType }));
+const comp = new ShaderPass(clouds.compositeShader(sceneRT.texture));
+comp.uniforms.tScene.value = sceneRT.texture;        // ShaderPass clones uniforms and drops render-target textures
+const noClouds = new THREE.DataTexture(new Uint8Array(4), 1, 1); noClouds.needsUpdate = true;
+composer.addPass(comp); composer.addPass(stage.bloom); composer.addPass(new OutputPass());
+function resize() {
+  const w = W(), h = H();
+  sceneRT.setSize(w, h); composer.setPixelRatio(1); composer.setSize(w, h); clouds.setSize(w, h);
+}
+addEventListener('resize', resize); resize();
+
+// ================================================================ theme application
+function applyTheme() {
+  const t = theme();
+  document.body.classList.toggle('t-bright', cfg.theme === 'bright'); document.body.classList.toggle('t-dusk', cfg.theme === 'dusk');
+  const k = t.cloudXZ;
+  clouds.boxMin.set(span[0] * k, t.cloudY[0], span[2] * k); clouds.boxMax.set(span[1] * k, t.cloudY[1], span[3] * k);
+  if (t.clear) clouds.setClear({ half: TU.uEdgeHalf.value.toArray(), corner: 3000, inset: t.clear.inset, soft: t.clear.soft, amount: clearAmt });
+  clouds.uniforms.uDensity.value = mode === 'intro' ? introDensity() : mapDensity();
+  applySurround(); setMood(t.mood);
+  document.querySelectorAll('#themeseg .btn').forEach(b => b.classList.toggle('on', b.dataset.theme === cfg.theme));
+}
+
+// ================================================================ anchors + HTML markers
+const anchors = new THREE.Group(); anchors.name = 'L_anchors'; scene.add(anchors);
+const P = cfg.points.map(() => ({}));
+function buildAnchor(i) {
+  const p = cfg.points[i], a = P[i];
+  if (a.g) anchors.remove(a.g);
+  const g = new THREE.Object3D();
+  a.y = groundY(p.x, p.z);
+  g.position.set(p.x, a.y + 2, p.z);
+  anchors.add(g); a.g = g;
+}
+const pinsEl = $('pins');
+function twoLines(t) {
+  const w = t.split(' ');
+  if (w.length < 2) return [t];
+  let best = 1, bestLen = Infinity;
+  for (let k = 1; k < w.length; k++) {
+    const m = Math.max(w.slice(0, k).join(' ').length, w.slice(k).join(' ').length);
+    if (m < bestLen) { bestLen = m; best = k; }
+  }
+  return [w.slice(0, best).join(' '), w.slice(best).join(' ')];
+}
+const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function setLabel(i) {
+  P[i].mk.querySelector('.lbl').innerHTML = twoLines(cfg.points[i].title).map(l => `<span>${esc(l)}</span>`).join('<br>');
+  P[i].mk.querySelector('.hit').setAttribute('aria-label', cfg.points[i].title);
+}
+function setHot(i, on) {
+  const m = P[i]?.mk; if (!m) return;
+  if (on) { m.classList.remove('hot'); void m.offsetWidth; m.classList.add('hot'); }
+  else m.classList.remove('hot');
+}
+function buildUI() {
+  pinsEl.innerHTML = '';
+  cfg.points.forEach((p, i) => {
+    const m = document.createElement('div'); m.className = 'mk'; m.style.setProperty('--c', p.color);
+    const sparks = [20, 75, 140, 200, 255, 320].map((a, k) => `<i class="sp" style="--a:${a}deg;--r:${58 + (k % 3) * 12}px"></i>`).join('');
+    m.innerHTML = `<span class="ring"></span>${sparks}<span class="dia"></span><span class="sweep"></span>
+      <span class="dots"><i></i><i></i><i></i></span><span class="lbl"></span><button class="hit"></button>`;
+    const hit = m.querySelector('.hit');
+    hit.onclick = e => { e.stopPropagation(); select(i); };
+    hit.onpointerenter = () => setHot(i, true); hit.onpointerleave = () => setHot(i, false);
+    hit.onfocus = () => setHot(i, true); hit.onblur = () => setHot(i, false);
+    pinsEl.appendChild(m); P[i].mk = m; P[i].pin = m;
+    setLabel(i);
+  });
+}
+cfg.points.forEach((_, i) => buildAnchor(i));
+buildUI();
+
+// ================================================================ camera math
+function camPos(target, az, el, dist) {
+  return new THREE.Vector3(Math.sin(az * DEG) * Math.cos(el * DEG), Math.sin(el * DEG), -Math.cos(az * DEG) * Math.cos(el * DEG))
+    .multiplyScalar(dist).add(target);
+}
+function readCamera() {
+  const cam = stage.camera, t = controls.target, d = cam.position.clone().sub(t);
+  const dist = d.length();
+  return { target: t.toArray().map(v => Math.round(v)), az: Math.round(((Math.atan2(d.x, -d.z) / DEG) + 360) % 360),
+           el: Math.round(Math.asin(d.y / dist) / DEG), dist: Math.round(dist), fov: Math.round(cam.fov) };
+}
+function bezier(x1, y1, x2, y2) {
+  const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx, cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
+  const sx = t => ((ax * t + bx) * t + cx) * t, sy = t => ((ay * t + by) * t + cy) * t, dsx = t => (3 * ax * t + 2 * bx) * t + cx;
+  return x => { let t = x; for (let k = 0; k < 8; k++) { const e = sx(t) - x; if (Math.abs(e) < 1e-5) break; const d = dsx(t); if (Math.abs(d) < 1e-6) break; t -= e / d; }
+    return sy(clamp(t, 0, 1)); };
+}
+const EASE = { cinema: bezier(.76, 0, .24, 1), settle: bezier(.16, 1, .3, 1), smooth: bezier(.45, 0, .55, 1), linear: x => x };
+
+let flight = null;
+function flyTo({ target, az, el, dist, fov }, onDone, opts = {}) {
+  const from = readCamera(); from.target = controls.target.clone(); from.fov = stage.camera.fov;
+  const to = { target: new THREE.Vector3(...target), az, el, dist, fov };
+  const daz = ((to.az - from.az + 540) % 360) - 180;
+  const span = from.target.distanceTo(to.target);
+  const spin = opts.spin ? opts.spin * (daz >= 0 ? 1 : -1) : 0;   // extra sweep, continuing the way we were already turning
+  flight = { from, to, daz: daz + spin, span, t0: performance.now(), dur: (opts.dur ?? cfg.transition.duration) * 1000,
+    ease: EASE[opts.ease ?? cfg.transition.easing] || EASE.cinema, arc: opts.arc ?? cfg.transition.arc,
+    dip: opts.dip || 0, punch: opts.punch || 0, bank: (opts.bank || 0) * (daz >= 0 ? -1 : 1), onDone };
+  controls.enabled = false;
+}
+function stepFlight(now) {
+  if (!flight) return;
+  const f = flight, x = Math.min(1, (now - f.t0) / f.dur), k = f.ease(x);
+  const tgt = f.from.target.clone().lerp(f.to.target, k);
+  const bump = Math.sin(Math.PI * k);
+  const az = f.from.az + f.daz * k, el = f.from.el + (f.to.el - f.from.el) * k + f.dip * bump;
+  const lift = 1 + f.arc * Math.sin(Math.PI * k) * Math.min(1, f.span / Math.max(f.to.dist, f.from.dist, 1)) * 1.5;
+  const dist = Math.exp(Math.log(f.from.dist) + (Math.log(f.to.dist) - Math.log(f.from.dist)) * k) * lift;
+  const cam = stage.camera; cam.fov = f.from.fov + (f.to.fov - f.from.fov) * k + f.punch * bump; cam.updateProjectionMatrix();
+  cam.position.copy(camPos(tgt, az, el, dist)); controls.target.copy(tgt); cam.lookAt(tgt);
+  if (f.bank) cam.rotateZ(f.bank * DEG * bump);                  // bank into the turn
+  if (x >= 1) { flight = null; controls.enabled = true; f.onDone?.(); }
+}
+
+// ================================================================ stage 1: cloud entrance
+// Above a thick dusk cloud deck south of Gelephu, facing the mountains; push down into the deck, then the deck thins
+// while the camera pulls back and up to the map overview.
+let mode = 'map';
+const intro = { t0: 0 };
+const G0 = cfg.points.find(p => p.id === 'aviation') || { x: 17000, z: 8000 };
+function introPath() {
+  if (theme().intro === 'ridge') {   // frame 1: inside the top of the deck, level, facing the high northern ridge
+    const rx = 4800, rz = -21000;
+    return { p0: new THREE.Vector3(rx - 6000, 3150, rz + 62000), t0: new THREE.Vector3(rx, 3500, rz),
+             p1: new THREE.Vector3(rx - 3000, 2900, rz + 50000), t1: new THREE.Vector3(rx, 3000, rz) };
+  }
+  const gx = G0.x, gz = G0.z;
+  return { p0: new THREE.Vector3(gx, 7400, gz + 30000), t0: new THREE.Vector3(gx, 3400, gz - 18000),
+           p1: new THREE.Vector3(gx, 4300, gz + 13000), t1: new THREE.Vector3(gx, 1300, gz - 22000) };
+}
+function startIntro() {
+  if (hero.state !== 'off') { hero.state = 'off'; hero.group.visible = false; document.body.classList.remove('hero', 'info'); }
+  current = -1; P.forEach(a => a.pin.classList.remove('on'));
+  flight = null; mode = 'intro'; intro.t0 = performance.now(); controls.enabled = false;
+  cloudCov = cloudGoal = cfg.clouds.intro; focusGoal = 0; clouds.uniforms.uDensity.value = introDensity(); clearAmt = 0;   // a thick deck that fills the view
+  document.body.classList.add('intro');
+}
+function endIntro() {
+  mode = 'map'; controls.enabled = true; userMoved = false; cloudGoal = cfg.clouds.map; clouds.uniforms.uDensity.value = mapDensity(); clearAmt = 1;
+  document.body.classList.remove('intro');
+  const o = cfg.overview; stage.camera.fov = o.fov; stage.camera.updateProjectionMatrix();
+  stage.camera.position.copy(camPos(new THREE.Vector3(...o.target), o.az, o.el, o.dist)); controls.target.set(...o.target);
+}
+function stepIntro(now) {
+  const A = cfg.intro.descend, B = cfg.intro.reveal, t = (now - intro.t0) / 1000, ip = introPath();
+  const o = cfg.overview, oT = new THREE.Vector3(...o.target), oP = camPos(oT, o.az, o.el, o.dist);
+  const cam = stage.camera; let pos, tgt;
+  if (t < A) {
+    const k = EASE.smooth(t / A);
+    pos = ip.p0.clone().lerp(ip.p1, k); tgt = ip.t0.clone().lerp(ip.t1, k);
+    cloudCov = cfg.clouds.intro;
+  } else {
+    const x = Math.min(1, (t - A) / B), k = EASE.cinema(x);
+    // altitude grows faster than the rest: the camera climbs out of the deck first, then swings back to the overview
+    pos = ip.p1.clone().lerp(oP, k); pos.y = lerp(ip.p1.y, oP.y, Math.pow(k, .7));
+    tgt = ip.t1.clone().lerp(oT, k);
+    cloudCov = lerp(cfg.clouds.intro, cfg.clouds.map, THREE.MathUtils.smoothstep(x, .05, .7));   // the deck parts
+    clouds.uniforms.uDensity.value = lerp(introDensity(), mapDensity(), THREE.MathUtils.smoothstep(x, .05, .6));
+    clearAmt = THREE.MathUtils.smoothstep(x, .0, .55);                    // the clouds slide off the slab
+    cam.fov = lerp(36, o.fov, k);
+    if (x >= 1) { endIntro(); return; }
+  }
+  if (t < A) cam.fov = 36;
+  cam.updateProjectionMatrix(); cam.position.copy(pos); controls.target.copy(tgt); cam.lookAt(tgt);
+  cloudGoal = cloudCov;
+}
+const skipIntro = () => { if (mode === 'intro') { endIntro(); } };
+addEventListener('keydown', e => { if (mode === 'intro' && (e.key === ' ' || e.key === 'Escape' || e.key === 'Enter')) { e.preventDefault(); skipIntro(); } });
+renderer.domElement.addEventListener('pointerdown', () => { if (mode === 'intro') skipIntro(); });
+
+// ================================================================ stage 2: map, with a slow idle drift
+let userMoved = false;
+controls.addEventListener('start', () => { userMoved = true; });
+function stepIdle(now) {
+  if (mode !== 'map' || current >= 0 || flight || userMoved) return;
+  const o = cfg.overview, t = now / 1000, T = new THREE.Vector3(...o.target);
+  stage.camera.position.copy(camPos(T, o.az + 2.2 * Math.sin(t * 2 * Math.PI / 46), o.el + .7 * Math.sin(t * 2 * Math.PI / 61), o.dist));
+  controls.target.copy(T);
+}
+
+// ================================================================ stage 3-5: select -> cinematic zoom -> floating object -> information
+let current = -1, focusAmt = 0, focusGoal = 0, focusT0 = 0;
+const isHero = i => !!cfg.points[i]?.hero;
+function heroBase(i) {            // world placement of the floating object
+  const p = cfg.points[i], S = cfg.hero.scale, gy = P[i].y;
+  return { x: p.x, z: p.z, ground: gy, y: gy + cfg.hero.float, S };
+}
+function heroView(i) {
+  const b = heroBase(i), h = cfg.hero, cam = stage.camera;
+  const len = hero.size.x * b.S * 1.1;
+  const hfov = 2 * Math.atan(Math.tan(cfg.overview.fov * DEG / 2) * cam.aspect);
+  // never let the object take more than ~55 % of the width (narrow screens back the camera off)
+  const dist = Math.max(len * h.distK, len / (2 * Math.tan(hfov / 2) * .55));
+  const centre = new THREE.Vector3(b.x, b.y + hero.size.y * b.S * .5, b.z);
+  const d = camPos(new THREE.Vector3(), h.az, h.el, 1);
+  const right = new THREE.Vector3(d.z, 0, -d.x).normalize();
+  const visW = 2 * dist * Math.tan(hfov / 2);
+  const shift = cam.aspect < 1 ? 0 : h.shift * clamp((cam.aspect - 1) / .6, 0, 1);   // portrait: text goes below instead
+  const visH = 2 * dist * Math.tan(cfg.overview.fov * DEG / 2);
+  const tgt = centre.addScaledVector(right, shift * visW);       // object left of centre, room for the text on the right
+  tgt.y -= (h.shiftY || 0) * visH;                               // and lifted, so the map shows below it (frame 3)
+  return { target: tgt.toArray(), az: h.az, el: h.el, dist, fov: cfg.overview.fov };
+}
+function placeHero(i, k) {        // k: 0 = sunk into the ground, 1 = floating
+  const b = heroBase(i), S = b.S, sz = hero.size;
+  const y = lerp(b.ground - sz.y * S * 1.4, b.y, k);
+  hero.holder.position.set(b.x, y, b.z);
+  hero.holder.scale.setScalar(S * lerp(.9, 1, k));
+  hero.holder.rotation.y = (cfg.hero.yaw || 0) * DEG + (1 - k) * -.12;
+  hero.ghost.position.set(b.x, b.ground + 3, b.z); hero.ghost.scale.setScalar(S); hero.ghost.material.opacity = .22 * k;
+  const r = Math.max(sz.x, sz.z) * S * .58, top = Math.max(0, y - b.ground);
+  hero.ring.position.set(b.x, b.ground + 4, b.z); hero.ring.scale.setScalar(r * lerp(.6, 1, k)); hero.ring.material.opacity = .85 * k;
+  hero.leader.position.set(b.x, b.ground + 4, b.z); hero.leader.scale.set(S * .6, Math.max(1, top), S * .6);
+  const links = theme().hero.links; hero.leader.visible = links && top > 2; hero.ring.visible = false; hero.ghost.visible = links; hero.plinth.visible = theme().hero.plinth;
+}
+function select(i) {
+  if (mode === 'intro') endIntro();
+  if (isHero(i)) return focusHero(i);
+  if (hero.state !== 'off') releaseHero(false);
+  current = i; mode = 'map';
+  focusGoal = 0;
+  flyTo(pointView(i));
+  P.forEach((a, k) => a.pin.classList.toggle('on', k === i));
+  $('p-sel').value = i; fillPoint();
+}
+function focusHero(i) {
+  current = i; mode = 'focus'; hero.point = i;
+  P.forEach((a, k) => a.pin.classList.toggle('on', k === i));
+  const p = cfg.points[i];
+  TU.uFocusP.value.set(p.x, p.z); TU.uFocusR.value = cfg.hero.focusR; TU.uFocusDim.value = cfg.hero.dim;
+  focusGoal = 0; cloudGoal = cfg.clouds.focus;          // no target-area highlight on the terrain
+  document.body.classList.remove('info');
+  fillInfo(i);
+  // stage 3: a long cinematic move that keeps the map in view (arc), so the location reads in its region
+  // stage 3: a long cinematic move that keeps the map in view (arc), so the location reads in its region
+  flyTo(heroView(i), () => raiseHero(i), { dur: 3.6, ease: 'cinema', arc: .35 });
+}
+function raiseHero(i) {
+  mode = 'hero'; hero.state = 'rising'; hero.t0 = performance.now(); hero.from = hero.k; hero.to = 1;
+  hero.group.visible = true; document.body.classList.add('hero');
+  fixShadows();
+}
+function releaseHero(toOverview = true) {
+  document.body.classList.remove('info');
+  if (hero.state === 'off') { if (toOverview) overview(); return; }
+  hero.state = 'sinking'; hero.t0 = performance.now(); hero.from = hero.k; hero.to = 0;
+  focusGoal = 0; cloudGoal = cfg.clouds.map;
+  if (toOverview) setTimeout(() => overview(), 450);
+}
+function stepHero(now, dt) {
+  if (hero.state === 'off') return;
+  const dur = (hero.state === 'rising' ? cfg.hero.rise : 1.1) * 1000;
+  const x = Math.min(1, (now - hero.t0) / dur), k = lerp(hero.from, hero.to, hero.state === 'rising' ? EASE.settle(x) : EASE.smooth(x));
+  hero.k = k;
+  placeHero(hero.point, k);
+  // a slow breath once it has risen: the object hangs in the air rather than sitting on a shelf
+  if (hero.state === 'rising' && x >= 1) hero.state = 'shown';
+  if (hero.state === 'shown') hero.holder.position.y += Math.sin(now / 1000 * 2 * Math.PI / 7) * hero.size.y * cfg.hero.scale * .04;
+  if (hero.state === 'rising' && x > .55) document.body.classList.add('info');
+  if (hero.state === 'sinking' && x >= 1) { hero.state = 'off'; hero.group.visible = false; document.body.classList.remove('hero'); fixShadows(); stage.measure(); fixShadows(); }
+  // keep the key light's shadow on the object while it is up (the map-wide frustum is far too coarse)
+  if (hero.state !== 'off') {
+    const bb = new THREE.Box3().setFromObject(hero.holder);
+    if (!bb.isEmpty()) stage.rig.fit(bb.expandByScalar(hero.size.x * cfg.hero.scale * .15), 4096);
+  }
+}
+function overview() {
+  if (mode === 'intro') return;
+  if (hero.state !== 'off' && hero.state !== 'sinking') return releaseHero(true);
+  current = -1; mode = 'map'; focusGoal = 0;
+  P.forEach(a => a.pin.classList.remove('on'));
+  flyTo(cfg.overview, () => { userMoved = false; });
+}
+
+// stage 5: information set beside the object (anchored to a point on the object's right flank, projected each frame)
+function fillInfo(i) {
+  const h = cfg.points[i].hero;
+  $('i-title').textContent = h.name;
+  $('i-lead').textContent = h.lead;
+  $('i-facts').innerHTML = (h.facts || []).map(([k, v], n) => {
+    const d = (.6 + n * .1).toFixed(2);
+    return `<div class="ln" style="grid-column:1"><dt style="--d:${d}s">${esc(k)}</dt></div><div class="ln"><dd style="--d:${d}s">${esc(v)}</dd></div>`;
+  }).join('');
+}
+const _v = new THREE.Vector3(), _bb = new THREE.Box3();
+function stepInfo() {
+  if (hero.state === 'off' && !document.body.classList.contains('info')) return;
+  const cam = stage.camera, w = innerWidth, h = innerHeight;
+  // the object's on-screen rectangle (8 corners of its bounds)
+  _bb.setFromObject(hero.holder);
+  let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+  for (let k = 0; k < 8; k++) {
+    _v.set(k & 1 ? _bb.max.x : _bb.min.x, k & 2 ? _bb.max.y : _bb.min.y, k & 4 ? _bb.max.z : _bb.min.z).project(cam);
+    const sx = (_v.x * .5 + .5) * w, sy = (-_v.y * .5 + .5) * h;
+    x0 = Math.min(x0, sx); x1 = Math.max(x1, sx); y0 = Math.min(y0, sy); y1 = Math.max(y1, sy);
+  }
+  const info = $('info'), iw = info.offsetWidth, ih = info.offsetHeight, gap = 40;
+  let x, y, ax, ay;
+  if (theme().text !== 'below' && w - x1 >= iw + gap + 16) {   // room on the right: text beside the object, vertically centred on it
+    x = x1 + gap; y = clamp((y0 + y1) / 2 - ih * .4, 16, h - ih - 16); ax = x1 - (x1 - x0) * .04; ay = (y0 + y1) / 2;
+  } else {                                    // narrow screens: text below the object, aligned to its left edge
+    x = clamp(x0, 16, w - iw - 16); y = clamp(y1 + gap * .6, 16, h - ih - 16); ax = clamp(x0 + 24, 0, w); ay = y1 - 6;
+  }
+  info.style.transform = `translate(${x}px, ${y}px)`;
+  const lx = x1 + gap <= x ? x - 10 : x + 6, ly = x1 + gap <= x ? y + 26 : y - 8;
+  $('lead-l').setAttribute('x1', ax); $('lead-l').setAttribute('y1', ay); $('lead-l').setAttribute('x2', lx); $('lead-l').setAttribute('y2', ly);
+  $('lead-c').setAttribute('cx', ax); $('lead-c').setAttribute('cy', ay);
+}
+$('i-back').onclick = () => overview();
+
+// ================================================================ other points: the 25 % ramp shot
+function rampView(i) {
+  const p = cfg.points[i], o = cfg.overview, r = cfg.ramp;
+  const dist = o.dist * (1 - r.zoom / 100);
+  const el = Math.max(5, o.el - r.tilt);
+  const side = Math.sign(p.x - o.target[0]) || 1;
+  const az = o.az + r.turn * side;
+  const half = cfg.overview.fov * DEG / 2;
+  const alpha = Math.atan(Math.tan(half) * (2 * r.pointY - 1));
+  const elr = el * DEG;
+  const s = dist * Math.cos(elr) - dist * Math.sin(elr) / Math.tan(elr + alpha);
+  const fwd = new THREE.Vector3(-Math.sin(az * DEG), 0, Math.cos(az * DEG));
+  const t = new THREE.Vector3(p.x, P[i].y, p.z).addScaledVector(fwd, s);
+  return { target: t.toArray(), az, el, dist, fov: o.fov };
+}
+function pointView(i) {
+  const p = cfg.points[i];
+  if (!p.view?.custom) return rampView(i);
+  const o = p.view.offset || [0, 0, 0];
+  return { target: [p.x + o[0], P[i].y + o[1], p.z + o[2]], az: p.view.az, el: p.view.el, dist: p.view.dist, fov: p.view.fov };
+}
+{ let down = null;      // a click on empty map (not a drag) returns to the overview
+  renderer.domElement.addEventListener('pointerdown', e => { down = [e.clientX, e.clientY]; });
+  renderer.domElement.addEventListener('pointerup', e => {
+    if (down && Math.hypot(e.clientX - down[0], e.clientY - down[1]) < 5 && current >= 0 && !picking) overview(); down = null; }); }
+addEventListener('keydown', e => {
+  if (e.target.closest('#cp') || mode === 'intro') return;
+  if (e.key === 'Escape') overview();
+  if (e.key === 'ArrowRight' && current >= 0) select((current + 1) % cfg.points.length);
+  if (e.key === 'ArrowLeft' && current >= 0) select((current - 1 + cfg.points.length) % cfg.points.length);
+});
+
+// ================================================================ per frame
+const v = new THREE.Vector3();
+function updatePins() {
+  const cam = stage.camera, w = innerWidth, h = innerHeight;
+  const camDist = cam.position.distanceTo(controls.target);
+  P.forEach((a, i) => {
+    if (!a.g) return;
+    const d = cam.position.distanceTo(a.g.position);
+    v.copy(a.g.position).project(cam);
+    a.mk.classList.toggle('hide', v.z > 1 || (current >= 0 && i !== current && d < camDist * .6));
+    a.mk.style.transform = `translate(${(v.x * .5 + .5) * w}px, ${(-v.y * .5 + .5) * h}px) scale(${cfg.look.markerScale})`;
+    a.mk.style.zIndex = String(Math.round(1e6 - d));
+  });
+}
+const clock = new THREE.Clock();
+function frame() {
+  const now = performance.now(), dt = Math.min(clock.getDelta(), .05);
+  if (mode === 'intro') stepIntro(now); else { stepFlight(now); stepIdle(now); }
+  controls.update(dt);
+  stepHero(now, dt);
+  // stage 3 highlight: fade in, and a scan ring that sweeps outward from the place every few seconds
+  focusAmt += (focusGoal - focusAmt) * (1 - Math.exp(-dt * 2.2));
+  TU.uFocusAmt.value = focusAmt < .002 ? 0 : focusAmt;
+  TU.uScanR.value = ((now - focusT0) / 1000 % 4.5) / 4.5 * cfg.hero.focusR * 1.05;
+  // clouds: ease coverage toward the goal of the current stage
+  if (mode !== 'intro') cloudCov += (cloudGoal - cloudCov) * (1 - Math.exp(-dt * 1.2));
+  clouds.setCoverage(cloudCov);
+  clouds.uniforms.uClearAmt.value = theme().clear ? clearAmt : 0;
+  if (theme().clear) {                        // ease the clear zone wider while the object is up, back again on the map
+    const goal = mode === 'focus' || mode === 'hero' ? theme().clear.focusInset : theme().clear.inset;
+    clearInset += (goal - clearInset) * (1 - Math.exp(-dt * 1.4)); clouds.uniforms.uClearInset.value = clearInset;
+  }
+  const cam = stage.camera;
+  clouds.update(dt, cam);
+  renderer.setRenderTarget(sceneRT); renderer.render(scene, cam); renderer.setRenderTarget(null);
+  comp.uniforms.tClouds.value = cfg.clouds.on ? clouds.render(cam, sceneRT.depthTexture) : noClouds;
+  composer.render(dt);
+  updatePins(); stepInfo();
+}
+renderer.setAnimationLoop(frame);          // replaces the kit's loop: the map now renders through the cloud pipeline
+
+// ================================================================ control panel (press P)
+const cp = $('cp');
+addEventListener('keydown', e => { if ((e.key === 'p' || e.key === 'P') && !e.target.closest('input, textarea, select')) cp.classList.toggle('closed'); });
+const bind = (id, get, set, show = x => x) => {
+  const el = $(id), out = $(id + '-v');
+  const sync = () => { el.value = get(); if (out) out.textContent = show(+el.value); };
+  el.addEventListener('input', () => { set(+el.value); if (out) out.textContent = show(+el.value); save(); });
+  return sync;
+};
+const liveHero = () => { if (hero.state === 'shown' || hero.state === 'rising') { const pv = heroView(hero.point), t = new THREE.Vector3(...pv.target);
+  stage.camera.position.copy(camPos(t, pv.az, pv.el, pv.dist)); controls.target.copy(t); TU.uFocusDim.value = cfg.hero.dim; } };
+const syncs = [
+  bind('j-a', () => cfg.intro.descend, x => { cfg.intro.descend = x; }, x => x.toFixed(1) + ' s'),
+  bind('j-b', () => cfg.intro.reveal, x => { cfg.intro.reveal = x; }, x => x.toFixed(1) + ' s'),
+  bind('c-map', () => cfg.clouds.map, x => { cfg.clouds.map = x; if (mode === 'map') cloudGoal = x; }, x => Math.round(x * 100) + ' %'),
+  bind('c-foc', () => cfg.clouds.focus, x => { cfg.clouds.focus = x; if (mode !== 'map') cloudGoal = x; }, x => Math.round(x * 100) + ' %'),
+  bind('c-drift', () => cfg.clouds.drift, x => { cfg.clouds.drift = x; clouds.setDrift(x); }, x => x + ' m/s'),
+  bind('h-scale', () => cfg.hero.scale, x => { cfg.hero.scale = x; liveHero(); }, x => x.toFixed(1) + '×'),
+  bind('h-float', () => cfg.hero.float, x => { cfg.hero.float = x; liveHero(); }, x => x + ' m'),
+  bind('h-dist', () => cfg.hero.distK, x => { cfg.hero.distK = x; liveHero(); }, x => x.toFixed(2)),
+  bind('h-az', () => cfg.hero.az, x => { cfg.hero.az = x; liveHero(); }, x => x + '°'),
+  bind('h-el', () => cfg.hero.el, x => { cfg.hero.el = x; liveHero(); }, x => x + '°'),
+  bind('h-shy', () => cfg.hero.shiftY || 0, x => { cfg.hero.shiftY = x; liveHero(); }, x => x.toFixed(2)),
+  bind('h-shift', () => cfg.hero.shift, x => { cfg.hero.shift = x; liveHero(); }, x => x.toFixed(2)),
+  bind('h-dim', () => cfg.hero.dim, x => { cfg.hero.dim = x; liveHero(); }, x => Math.round(x * 100) + ' %'),
+  bind('fog', () => cfg.look.fogDensity * 1e6, x => { cfg.look.fogDensity = x / 1e6; applyLook(); }, x => x.toFixed(1)),
+  bind('exp', () => cfg.look.exposure, x => { cfg.look.exposure = x; applyLook(); }, x => x.toFixed(2)),
+  bind('blm', () => cfg.look.bloomThreshold ?? 1.1, x => { cfg.look.bloomThreshold = x; applyLook(); }, x => x.toFixed(2)),
+  bind('edg', () => cfg.look.edgeBlend ?? 2500, x => { cfg.look.edgeBlend = x; applySurround(); }, x => (x / 1000).toFixed(1) + ' km'),
+  bind('surb', () => cfg.look.surroundBrightness ?? 1, x => { cfg.look.surroundBrightness = x; applySurround(); }, x => x.toFixed(2)),
+  bind('msc', () => cfg.look.markerScale, x => { cfg.look.markerScale = x; }, x => x.toFixed(2)),
+  bind('dur', () => cfg.transition.duration, x => { cfg.transition.duration = x; }, x => x.toFixed(1) + ' s'),
+  bind('arc', () => cfg.transition.arc, x => { cfg.transition.arc = x; }, x => x.toFixed(2)),
+];
+const liveOverview = () => { if (current < 0 && !flight && mode === 'map') { const o = cfg.overview; const t = new THREE.Vector3(...o.target);
+  stage.camera.fov = o.fov; stage.camera.updateProjectionMatrix(); stage.camera.position.copy(camPos(t, o.az, o.el, o.dist)); controls.target.copy(t); } };
+const oSync = [
+  bind('o-az', () => cfg.overview.az, x => { cfg.overview.az = x; liveOverview(); }, x => x + '°'),
+  bind('o-el', () => cfg.overview.el, x => { cfg.overview.el = x; liveOverview(); }, x => x + '°'),
+  bind('o-dist', () => cfg.overview.dist, x => { cfg.overview.dist = x; liveOverview(); }, x => (x / 1000).toFixed(0) + ' km'),
+  bind('o-fov', () => cfg.overview.fov, x => { cfg.overview.fov = x; liveOverview(); }, x => x + '°'),
+];
+const selEl = $('p-sel');
+function fillSelect() { selEl.innerHTML = cfg.points.map((p, i) => `<option value="${i}">${i + 1}. ${esc(p.title)}</option>`).join(''); }
+const pi = () => +selEl.value;
+const pSync = [() => { $('p-mode').textContent = cfg.points[pi()].hero
+  ? 'This point opens its floating object. Its camera is set in "Floating object" above.'
+  : cfg.points[pi()].view?.custom
+  ? 'This point uses its own saved camera. "Back to ramp shot" returns it to the shared ramp settings.'
+  : 'This point uses the shared ramp shot. Orbit to a framing you like and press "Use current camera" to give it its own.'; }];
+const liveRamp = () => { if (current >= 0 && !flight && !isHero(current) && !cfg.points[current].view?.custom) { const pv = rampView(current), t = new THREE.Vector3(...pv.target);
+  stage.camera.position.copy(camPos(t, pv.az, pv.el, pv.dist)); controls.target.copy(t); } };
+const rSync = [
+  bind('r-zoom', () => cfg.ramp.zoom, x => { cfg.ramp.zoom = x; liveRamp(); }, x => x + ' %'),
+  bind('r-tilt', () => cfg.ramp.tilt, x => { cfg.ramp.tilt = x; liveRamp(); }, x => x + '°'),
+  bind('r-turn', () => cfg.ramp.turn, x => { cfg.ramp.turn = x; liveRamp(); }, x => x + '°'),
+  bind('r-y', () => Math.round(cfg.ramp.pointY * 100), x => { cfg.ramp.pointY = x / 100; liveRamp(); }, x => x + ' %'),
+];
+$('ease').value = cfg.transition.easing;
+$('ease').onchange = e => { cfg.transition.easing = e.target.value; save(); };
+$('sur').value = cfg.look.surround === false ? '0' : '1';
+$('sur').onchange = e => { cfg.look.surround = e.target.value === '1'; applySurround(); save(); };
+$('j-on').value = cfg.intro.on ? '1' : '0';
+$('j-on').onchange = e => { cfg.intro.on = e.target.value === '1'; save(); };
+$('c-on').value = cfg.clouds.on ? '1' : '0';
+$('c-on').onchange = e => { cfg.clouds.on = e.target.value === '1'; save(); };
+$('j-replay').onclick = () => { cp.classList.add('closed'); startIntro(); };
+$('o-cap').onclick = () => { const c = readCamera(); Object.assign(cfg.overview, c); oSync.forEach(f => f()); save(); toast('Overview camera saved'); };
+$('o-go').onclick = overview;
+$('p-clear').onclick = () => { const p = cfg.points[pi()]; p.view = { ...(p.view || {}), custom: false }; delete p.view.offset;
+  pSync.forEach(f => f()); save(); if (current === pi()) select(pi()); toast(`${p.title} uses the ramp shot`); };
+function fillPoint() {
+  const p = cfg.points[pi()];
+  $('p-title').value = p.title; $('p-x').value = Math.round(p.x); $('p-z').value = Math.round(p.z);
+  pSync.forEach(f => f());
+}
+selEl.onchange = fillPoint;
+$('p-title').oninput = e => { cfg.points[pi()].title = e.target.value; setLabel(pi()); fillSelectKeep(); save(); };
+function fillSelectKeep() { const k = selEl.value; fillSelect(); selEl.value = k; }
+function movePoint(i, x, z) {
+  cfg.points[i].x = x; cfg.points[i].z = z; buildAnchor(i); fillPoint(); save();
+  if (current === i) select(i);
+}
+$('p-x').onchange = e => movePoint(pi(), +e.target.value, cfg.points[pi()].z);
+$('p-z').onchange = e => movePoint(pi(), cfg.points[pi()].x, +e.target.value);
+$('p-cap').onclick = () => {
+  const c = readCamera(), p = cfg.points[pi()];
+  if (p.hero) { Object.assign(cfg.hero, { az: c.az, el: c.el }); syncs.forEach(f => f()); save(); toast('Object camera angle saved'); return; }
+  p.view = { custom: true, az: c.az, el: c.el, dist: c.dist, fov: c.fov };
+  const off = new THREE.Vector3(...c.target).sub(new THREE.Vector3(p.x, P[pi()].y, p.z));
+  if (off.length() > 50) p.view.offset = off.toArray().map(Math.round); else delete p.view.offset;
+  pSync.forEach(f => f()); save(); toast(`View saved for ${p.title}`);
+};
+$('p-go').onclick = () => select(pi());
+let picking = false;
+$('p-pick').onclick = () => { picking = true; document.body.classList.add('picking'); toast('Click the map to place the point'); };
+const ndc = new THREE.Vector2();
+renderer.domElement.addEventListener('click', e => {
+  if (!picking) return;
+  ndc.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  ray.setFromCamera(ndc, stage.camera);
+  const hit = ray.intersectObject(terrain, false)[0];
+  picking = false; document.body.classList.remove('picking');
+  if (hit) { movePoint(pi(), Math.round(hit.point.x), Math.round(hit.point.z)); toast(`Moved ${cfg.points[pi()].title}`); }
+});
+const json = () => JSON.stringify(cfg, null, 2);
+$('s-copy').onclick = async () => { try { await navigator.clipboard.writeText(json()); toast('JSON copied'); } catch { $('s-json').value = json(); toast('Copy blocked: JSON is in the box below'); } };
+$('s-dl').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([json()], { type: 'application/json' })); a.download = 'points.json'; a.click(); };
+$('s-reset').onclick = () => { cfg = structuredClone(fileCfg); save(); rebuildAll(); toast('Reset to experience/points.json'); };
+$('s-load').onclick = () => { try { cfg = JSON.parse($('s-json').value); save(); rebuildAll(); toast('Loaded'); } catch (e) { toast('That JSON did not parse'); } };
+function rebuildAll() {
+  ensureDefaults(); ensureThemePreset(); applyTheme();
+  anchors.clear(); P.length = 0; cfg.points.forEach(() => P.push({}));
+  cfg.points.forEach((_, i) => buildAnchor(i)); buildUI(); fillSelect(); fillPoint();
+  syncs.forEach(f => f()); oSync.forEach(f => f()); rSync.forEach(f => f()); $('ease').value = cfg.transition.easing;
+  applyLook(); applySurround(); clouds.setDrift(cfg.clouds.drift); overview();
+}
+for (const b of document.querySelectorAll('#themeseg .btn')) b.onclick = () => {
+  if (hero.state !== 'off') releaseHero(false);
+  loadThemePreset(b.dataset.theme); cfg.presetFor = `${cfg.theme}:${PRESET_VER}`; save();
+  applyTheme(); syncs.forEach(f => f()); oSync.forEach(f => f());
+  $('sur').value = cfg.look.surround === false ? '0' : '1';
+  startIntro();
+};
+let tt; function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add('show'); clearTimeout(tt); tt = setTimeout(() => el.classList.remove('show'), 1800); }
+fillSelect(); fillPoint(); syncs.forEach(f => f()); oSync.forEach(f => f()); rSync.forEach(f => f());
+
+// ================================================================ start
+applyTheme();
+$('loadmsg').textContent = 'COMPILING';
+await renderer.compileAsync(scene, stage.camera);
+if (cfg.intro.on) startIntro(); else { endIntro(); }
+requestAnimationFrame(() => $('loader').classList.add('done'));
+window.__exp = { cfg: () => cfg, select, overview, startIntro, skipIntro, readCamera, P, hero, clouds, get mode() { return mode; },
+  capture: async (n) => { frame(); const url = renderer.domElement.toDataURL('image/jpeg', .82);
+    return fetch('http://127.0.0.1:5199/?n=' + n, { method: 'POST', body: url }).then(r => r.text()); } };
+</script>
+</body>
+</html>

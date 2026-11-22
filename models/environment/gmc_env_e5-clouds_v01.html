@@ -1,0 +1,259 @@
+<meta charset="utf-8">
+<title>GMC Cloud Sea</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya+Sans:wght@400;500;700&family=Belleza&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: full-bleed sky; UI floats in the corners so the cloud sea and horizon stay clear. */
+  :root {
+    color-scheme: dark;
+    --bg: #18130f; --ink: #efece6; --ink-2: rgba(239,236,230,.72); --line: rgba(239,236,230,.16);
+    --panel: rgba(24,19,15,.5); --saffron: #fe6417; --maroon: #6d0033; --honey: #ffc450;
+    --f-display: "Belleza", Georgia, serif; --f-body: "Alegreya Sans", system-ui, sans-serif; --f-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f-body); overflow: hidden; }
+  #stage { position: fixed; inset: 0; touch-action: none; }
+  #stage canvas { display: block; }
+  .mono { font-family: var(--f-mono); font-size: 11px; letter-spacing: .05em; }
+  .panel { position: fixed; background: var(--panel); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border: 1px solid var(--line); border-radius: 16px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { padding: 4px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink-2); white-space: nowrap; }
+  .chip b { color: var(--ink); font-weight: 500; }
+  #telemetry { top: calc(16px + env(safe-area-inset-top, 0px)); left: calc(16px + env(safe-area-inset-left, 0px)); padding: 8px; max-width: 380px; }
+  #variants { top: calc(16px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); padding: 5px; display: flex; gap: 4px; }
+  .seg { display: flex; border-radius: 999px; overflow: hidden; }
+  button { font: 500 12px var(--f-body); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); background: transparent; border: 0; padding: 8px 14px; cursor: pointer; border-radius: 999px; }
+  button:hover { color: var(--ink); background: rgba(239,236,230,.08); }
+  button:focus-visible { outline: 2px solid var(--honey); outline-offset: 2px; }
+  button[aria-pressed="true"] { color: var(--bg); background: var(--ink); }
+  #hints { top: calc(16px + env(safe-area-inset-top, 0px)); right: calc(16px + env(safe-area-inset-right, 0px)); padding: 12px 16px; line-height: 1.75; color: var(--ink-2); }
+  #hints b { color: var(--ink); font-weight: 500; }
+  #dock { bottom: calc(16px + env(safe-area-inset-bottom, 0px)); left: calc(16px + env(safe-area-inset-left, 0px)); padding: 16px 18px; width: min(560px, calc(100vw - 32px)); display: grid; gap: 10px; }
+  #status { color: var(--ink-2); display: flex; gap: 14px; flex-wrap: wrap; }
+  #status .dot { color: var(--saffron); }
+  #dock h1 { font: 400 clamp(24px, 3.4vw, 38px)/1.05 var(--f-display); margin: 0; letter-spacing: .01em; }
+  #sub { color: var(--ink-2); }
+  .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+  .actions button { border: 1px solid var(--line); }
+  #loader { position: fixed; inset: 0; display: grid; place-items: center; background: radial-gradient(circle at 50% 60%, #2a2420, var(--bg) 70%); z-index: 20; transition: opacity .8s cubic-bezier(.16,1,.3,1); }
+  #loader .track { width: 180px; height: 2px; background: rgba(239,236,230,.15); border-radius: 2px; margin: 12px auto 0; overflow: hidden; }
+  #loader .track i { display: block; height: 100%; width: 0; background: #ffd28c; }
+  #err { position: fixed; right: 16px; bottom: 16px; max-width: 60vw; color: #ff8a8d; }
+  @media (max-width: 860px) { #hints { display: none; } #variants { top: auto; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); left: auto; right: calc(16px + env(safe-area-inset-right, 0px)); transform: none; flex-direction: column; } #dock { bottom: calc(118px + env(safe-area-inset-bottom, 0px)); } }
+</style>
+
+<div id="stage" aria-label="Volumetric cloud sea"></div>
+
+<div id="telemetry" class="panel"><div class="chips mono">
+  <span class="chip">FPS::<b id="t-fps">–</b></span>
+  <span class="chip">MOOD::<b id="t-mood">GOLDEN</b></span>
+  <span class="chip">VIEW::<b id="t-view">ABOVE</b></span>
+  <span class="chip">QUALITY::<b id="t-q">HIGH</b></span>
+</div></div>
+
+<div id="variants" class="panel">
+  <div class="seg" role="group" aria-label="Light">
+    <button data-mood="golden" aria-pressed="true">Golden</button><button data-mood="dusk" aria-pressed="false">Dusk</button><button data-mood="day" aria-pressed="false">Day</button>
+  </div>
+  <div class="seg" role="group" aria-label="View">
+    <button data-view="above" aria-pressed="true">Above</button><button data-view="map" aria-pressed="false">Over map</button>
+  </div>
+</div>
+
+<div id="hints" class="panel mono">
+  <b>Wheel / pinch</b> fly in toward cursor · <b>+ −</b><br>
+  <b>Drag</b> look around (springs back)<br>
+  <b>Shift / right-drag</b> pan<br>
+  <b>1 2 3</b> light · <b>V</b> view · <b>[ ]</b> coverage<br>
+  <b>0</b> or <b>double-click</b> reset · <b>Q</b> quality
+</div>
+
+<div id="dock" class="panel">
+  <div id="status" class="mono"><span><span class="dot">●</span> ATMOSPHERE::<b>LIVE</b></span><span>GMC::E5</span><span>CLOUDS::<b id="s-ver">–</b></span></div>
+  <h1>Cloud Sea</h1>
+  <div id="sub" class="mono">CUMULUS 1.5–3.8 KM · CIRRUS 9.5 KM · 60 × 60 KM FIELD</div>
+  <div class="actions">
+    <button id="a-cov">Coverage: 72%</button>
+    <button id="a-cirrus" aria-pressed="true">Cirrus: on</button>
+    <button id="a-map" aria-pressed="false">Map: off</button>
+    <button id="a-q">Quality: high</button>
+  </div>
+</div>
+
+<div id="err" class="mono" hidden></div>
+<div id="loader"><div class="mono" style="text-align:center;color:rgba(239,236,230,.75)">BUILDING::CLOUD_NOISE <span id="l-pct">0%</span><div class="track"><i id="l-bar"></i></div></div></div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+  "gmc-kit": "../../shared/gmc-kit.js",
+  "gmc-clouds": "../../shared/gmc-clouds.js"
+} }
+</script>
+<script type="module">
+// ═══════════════════════════════════════════════════════════════════════════
+// GMC · E5 Cloud Sea · v01 — viewer for shared/gmc-clouds.js
+// Look after the Columbus Travel hero (golden-hour cloud sea, sun on the
+// horizon, fly-in), built as volumetric clouds in map metres.
+// ═══════════════════════════════════════════════════════════════════════════
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { createMaterials, createPlinth } from 'gmc-kit';
+import { createCloudLayer, createSky, CLOUD_MOODS, sunVector, CLOUDS_VERSION } from 'gmc-clouds';
+
+const $ = id => document.getElementById(id);
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const V = (x, y, z) => new THREE.Vector3(x, y, z);
+
+try {
+  await Promise.race([new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))), new Promise(r => setTimeout(r, 120))]);
+
+  // ─────────────────────────────────────────────────────────── renderer
+  const host = $('stage');
+  const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: true });
+  let quality = 'high';
+  const PR = () => Math.min(devicePixelRatio, quality === 'high' ? 1.5 : 1);
+  renderer.setPixelRatio(PR()); renderer.setSize(innerWidth, innerHeight);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.outputColorSpace = THREE.SRGBColorSpace;
+  host.appendChild(renderer.domElement);
+  const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 5, 140000);
+
+  // ─────────────────────────────────────────────────────────── clouds
+  const clouds = await createCloudLayer(renderer, { onProgress: f => { $('l-pct').textContent = Math.round(f * 100) + '%'; $('l-bar').style.width = f * 100 + '%'; } });
+
+  // ─────────────────────────────────────────────────────────── scene: sky + map stand-in + light
+  const scene = new THREE.Scene();
+  const sky = createSky(); scene.add(sky);
+  const M = createMaterials({ renderer, quality: 'low' });
+  const mapProxy = createPlinth(M, { width: 26000, depth: 20000, corner: .06, skirt: .035 }); mapProxy.name = 'map_stand_in'; scene.add(mapProxy);
+  const sun = new THREE.DirectionalLight(0xffffff, 3), hemi = new THREE.HemisphereLight(0xffffff, 0x000000, .8); scene.add(sun, hemi);
+
+  // ─────────────────────────────────────────────────────────── targets + post
+  const sz = () => [Math.round(innerWidth * PR()), Math.round(innerHeight * PR())];
+  const sceneRT = new THREE.WebGLRenderTarget(...sz(), { type: THREE.HalfFloatType, depthTexture: new THREE.DepthTexture(...sz()) });
+  const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(...sz(), { type: THREE.HalfFloatType }));
+  const comp = new ShaderPass(clouds.compositeShader(sceneRT.texture));
+  comp.uniforms.tScene.value = sceneRT.texture;   // ShaderPass clones uniforms and drops render-target textures: set it again
+  const bloom = new UnrealBloomPass(new THREE.Vector2(...sz()), .3, .5, .85);
+  composer.addPass(comp); composer.addPass(bloom); composer.addPass(new OutputPass());
+  function resize() {
+    renderer.setPixelRatio(PR()); renderer.setSize(innerWidth, innerHeight);
+    const [w, h] = sz(); sceneRT.setSize(w, h); composer.setPixelRatio(1); composer.setSize(w, h); bloom.resolution.set(w, h);
+    clouds.setSize(w, h); camera.aspect = innerWidth / innerHeight; camera.fov = camera.aspect < 1 ? 58 : 42; camera.updateProjectionMatrix();
+  }
+  addEventListener('resize', resize); resize();
+
+  // ─────────────────────────────────────────────────────────── moods
+  function setMood(name) {
+    const m = CLOUD_MOODS[name];
+    clouds.setMood(name); sky.setMood(name);
+    sun.color.set(m.sun.color); sun.intensity = m.sun.intensity * .45; sun.position.copy(sunVector(m.sun.az, m.sun.el)).multiplyScalar(50000);
+    hemi.color.set(m.amb.top); hemi.groundColor.set(m.amb.bottom); hemi.intensity = 1.1;
+    scene.fog = new THREE.FogExp2(m.haze, 1 / m.hazeDist);
+    renderer.toneMappingExposure = m.exposure; Object.assign(bloom, m.bloom);
+    document.querySelectorAll('[data-mood]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mood === name)));
+    $('t-mood').textContent = name.toUpperCase();
+  }
+
+  // ─────────────────────────────────────────────────────────── camera rig (two composed views; zoom flies in)
+  const VIEWS = {
+    above: { pos: V(9000, 4300, 2000), target: V(-11000, 2500, 9000) },   // skimming the tops, facing the low sun
+    map: { pos: V(0, 21000, 27000), target: V(0, 0, 0) },                // high oblique over the map, like V1
+  };
+  let view = 'above';
+  const st = { yaw: 0, pitch: 0, yawT: 0, pitchT: 0, zoom: 1, zoomT: 1, pan: V(0, 0, 0), panT: V(0, 0, 0) };
+  const plane = new THREE.Plane(V(0, 1, 0), -(clouds.boxMin.y + clouds.boxMax.y) / 2), ray = new THREE.Raycaster(), hit = V(0, 0, 0);
+  const ndc = (cx, cy) => new THREE.Vector2(cx / innerWidth * 2 - 1, -(cy / innerHeight) * 2 + 1);
+  function setMap(on) { mapProxy.visible = on; $('a-map').textContent = 'Map: ' + (on ? 'on' : 'off'); $('a-map').setAttribute('aria-pressed', String(on)); }
+  function setView(v) { view = v; reset(); setMap(v === 'map'); $('t-view').textContent = v === 'map' ? 'OVER MAP' : 'ABOVE';
+    document.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === v))); }
+  function reset() { st.yawT = st.pitchT = 0; st.zoomT = 1; st.panT.set(0, 0, 0); }
+  function zoomAt(cx, cy, f) {
+    const nz = clamp(st.zoomT * f, .22, 1.6);
+    ray.setFromCamera(ndc(cx, cy), camera);
+    if (ray.ray.intersectPlane(plane, hit)) { const k = 1 - nz / st.zoomT, c = VIEWS[view].target.clone().add(st.panT); st.panT.x += (hit.x - c.x) * k * .8; st.panT.z += (hit.z - c.z) * k * .8; }
+    st.zoomT = nz; if (st.zoomT >= .999) st.panT.set(0, 0, 0);
+  }
+  function placeCamera() {
+    const vw = VIEWS[view], tgt = vw.target.clone().add(st.pan), off = vw.pos.clone().sub(vw.target);
+    off.applyAxisAngle(V(0, 1, 0), st.yaw * Math.PI / 180);
+    const right = V(off.z, 0, -off.x).normalize(); off.applyAxisAngle(right, st.pitch * Math.PI / 180);
+    camera.position.copy(tgt).addScaledVector(off, st.zoom); camera.lookAt(tgt);
+  }
+
+  // ─────────────────────────────────────────────────────────── interaction: look, pan, fly in
+  const el = renderer.domElement, pointers = new Map(); let drag = null, pinch0 = null;
+  el.style.cursor = 'grab';
+  el.addEventListener('contextmenu', e => e.preventDefault());
+  el.addEventListener('pointerdown', e => {
+    el.setPointerCapture(e.pointerId); pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 2) { const [a, b] = [...pointers.values()]; pinch0 = { d: Math.hypot(a.x - b.x, a.y - b.y), z: st.zoomT }; drag = null; return; }
+    drag = { mode: e.shiftKey || e.button === 2 ? 'pan' : 'look', x: e.clientX, y: e.clientY };
+    el.style.cursor = drag.mode === 'pan' ? 'move' : 'grabbing';
+  });
+  el.addEventListener('pointermove', e => {
+    if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch0 && pointers.size === 2) { const [a, b] = [...pointers.values()], d = Math.hypot(a.x - b.x, a.y - b.y); zoomAt((a.x + b.x) / 2, (a.y + b.y) / 2, (pinch0.z * pinch0.d / d) / st.zoomT); return; }
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
+    if (drag.mode === 'look') { st.yawT = clamp(st.yawT - dx * .06, -25, 25); st.pitchT = clamp(st.pitchT - dy * .04, -8, 12); }
+    else { const d = camera.position.distanceTo(VIEWS[view].target) * .0016, r = V().setFromMatrixColumn(camera.matrixWorld, 0), f = V(r.z, 0, -r.x);
+      st.panT.addScaledVector(r, -dx * d).addScaledVector(f, dy * d); st.panT.y = 0; }
+  });
+  const end = e => { pointers.delete(e.pointerId); if (pointers.size < 2) pinch0 = null; drag = null; el.style.cursor = 'grab'; };
+  el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+  el.addEventListener('wheel', e => { e.preventDefault(); zoomAt(e.clientX, e.clientY, Math.exp(e.deltaY * .0011)); }, { passive: false });
+  el.addEventListener('dblclick', reset);
+
+  // ─────────────────────────────────────────────────────────── controls
+  let coverage = .72, cirrusOn = true;
+  function setCoverage(c) { coverage = clamp(c, .3, .9); clouds.setCoverage(coverage); $('a-cov').textContent = 'Coverage: ' + Math.round(coverage * 100) + '%'; }
+  function setCirrus(on) { cirrusOn = on; clouds.setCirrus(on ? .4 : 0); $('a-cirrus').textContent = 'Cirrus: ' + (on ? 'on' : 'off'); $('a-cirrus').setAttribute('aria-pressed', String(on)); }
+  function setQuality(q) { quality = q; clouds.setQuality(q); bloom.enabled = q === 'high'; resize(); $('t-q').textContent = q.toUpperCase(); $('a-q').textContent = 'Quality: ' + q; }
+  $('a-cov').onclick = () => setCoverage(coverage >= .86 ? .4 : coverage + .12);
+  $('a-cirrus').onclick = () => setCirrus(!cirrusOn);
+  $('a-map').onclick = () => setMap(!mapProxy.visible);
+  $('a-q').onclick = () => setQuality(quality === 'high' ? 'low' : 'high');
+  document.querySelectorAll('[data-mood]').forEach(b => b.onclick = () => setMood(b.dataset.mood));
+  document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => setView(b.dataset.view));
+  addEventListener('keydown', e => {
+    if (e.target.closest('button') && (e.key === ' ' || e.key === 'Enter')) return;
+    const k = e.key.toLowerCase();
+    if (k === '1') setMood('golden'); else if (k === '2') setMood('dusk'); else if (k === '3') setMood('day');
+    else if (k === 'v') setView(view === 'above' ? 'map' : 'above'); else if (k === '0') reset();
+    else if (k === '[') setCoverage(coverage - .05); else if (k === ']') setCoverage(coverage + .05);
+    else if (k === 'q') $('a-q').click();
+    else if (k === '+' || k === '=') zoomAt(innerWidth / 2, innerHeight / 2, .8); else if (k === '-') zoomAt(innerWidth / 2, innerHeight / 2, 1.25);
+  });
+  $('s-ver').textContent = CLOUDS_VERSION;
+
+  // ─────────────────────────────────────────────────────────── loop
+  const clock = new THREE.Clock(); let frames = 0, acc = 0, t0 = performance.now(), downgraded = false, fixedDt = 0;
+  const loop = () => {
+    const dt = fixedDt || Math.min(clock.getDelta(), .05), k = 1 - Math.exp(-dt * 5);
+    if (!drag) { st.yawT *= Math.exp(-dt * 2.2); st.pitchT *= Math.exp(-dt * 2.2); }
+    st.yaw += (st.yawT - st.yaw) * k; st.pitch += (st.pitchT - st.pitch) * k; st.zoom += (st.zoomT - st.zoom) * k * .8; st.pan.lerp(st.panT, k);
+    placeCamera();
+    clouds.update(dt, camera);
+    renderer.setRenderTarget(sceneRT); renderer.render(scene, camera); renderer.setRenderTarget(null);
+    comp.uniforms.tClouds.value = clouds.render(camera, mapProxy.visible ? sceneRT.depthTexture : null);
+    composer.render();
+    if (fixedDt) return;
+    frames++; acc += dt; if (acc > .5) { $('t-fps').textContent = Math.round(frames / acc); frames = 0; acc = 0; }
+  };
+  setMood('golden'); setCoverage(.72); setCirrus(true); setMap(false);
+  renderer.setAnimationLoop(loop);
+  setTimeout(() => { $('loader').style.opacity = 0; setTimeout(() => $('loader')?.remove(), 900); }, 60);
+
+  window.__api = { clouds, camera, renderer, scene, sky, composer, setMood, setView, reset, zoomAt, setQuality, setCoverage, setCirrus, st,
+    setCam(zoom = 1, yaw = 0, pitch = 0) { st.zoom = st.zoomT = zoom; st.yaw = st.yawT = yaw; st.pitch = st.pitchT = pitch; },
+    step(n = 30) { fixedDt = 1 / 30; for (let i = 0; i < n; i++) loop(); fixedDt = 0; } };
+  window.__ok = true;
+} catch (e) {
+  console.error(e); window.__err = String(e && e.stack || e);
+  const er = $('err'); er.hidden = false; er.textContent = 'Could not build the clouds: ' + e.message; $('loader')?.remove();
+}
+</script>

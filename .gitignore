@@ -1,0 +1,15 @@
+# local Python environment (recreate: python3 -m venv .venv && .venv/bin/pip install tifffile imagecodecs pyproj scipy pillow numpy)
+.venv/
+
+# raw downloads (Copernicus GLO-30 DEM and ESA WorldCover tiles): large, re-downloadable; see tools/map/01_dem_prep.py and 02_landcover.py
+data/dem/
+data/landcover/
+
+# Blender working file is over GitHub's 100 MB limit; rebuild with tools/map/10_build_blend.py
+*.blend
+*.blend1
+
+# scratch previews
+data/map/_*
+
+.DS_Store

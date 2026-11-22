@@ -1,0 +1,38 @@
+{
+  "source": "Copernicus GLO-30 DEM (ESA), AWS open data",
+  "crs": "EPSG:32646",
+  "lonlat_box": [
+    89.8,
+    26.74,
+    90.8,
+    27.14
+  ],
+  "utm_bounds": [
+    182808.56900871784,
+    2961640.6625974025,
+    281194.61322153406,
+    3003851.788026851
+  ],
+  "origin_utm46n": [
+    232001.59111512595,
+    2982746.225312127
+  ],
+  "origin_lonlat": [
+    90.30082042052226,
+    26.94085814423317
+  ],
+  "cell_m": 30.0,
+  "shape": [
+    1408,
+    3280
+  ],
+  "hmin": 107.0,
+  "hmax": 3104.0,
+  "note": "Extent is approximate GMC (option A); not the official boundary.",
+  "landcover_cell_m": 15.0,
+  "landcover_shape": [
+    2815,
+    6560
+  ],
+  "landcover_source": "ESA WorldCover 10m 2021 v200 (20 m overview)"
+}

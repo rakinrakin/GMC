@@ -1,0 +1,15 @@
+{
+  "nx": 602,
+  "ny": 413,
+  "cell": 350.0,
+  "x0": -105193.02210640811,
+  "z0": -72105.56271472434,
+  "exag": 1.5,
+  "slab_half": [
+    49193.02210640811,
+    21105.562714724336
+  ],
+  "height": "gmc_map_m2-context_v01_height.bin (Float32 LE, row 0 = north, metres x exag)",
+  "texture": "gmc_map_m2-context_v01.png (RGBA, row 0 = north, load with flipY=false)",
+  "sources": "Copernicus GLO-30 (mean over cell; min-filtered under the slab), ESA WorldCover 2021 (muted)"
+}

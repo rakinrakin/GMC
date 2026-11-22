@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GMC Material Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya+Sans:wght@400;500;700&family=Belleza&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --umber:#18130f; --night:#0b0e18; --sand:#efece6; --sand-2:rgba(239,236,230,.72); --line:rgba(239,236,230,.14);
+    --saffron:#fe6417; --maroon:#6d0033; --panel:rgba(24,19,15,.62);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--umber); color: var(--sand); font-family: "Alegreya Sans", system-ui, sans-serif; overflow: hidden; }
+  #stage { position: fixed; inset: 0; }
+  .mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11px; letter-spacing: .04em; }
+  .panel { position: fixed; background: var(--panel); backdrop-filter: blur(10px); border: 1px solid var(--line); border-radius: 16px; }
+  #title { top: 16px; left: 16px; padding: 14px 18px; max-width: 320px; }
+  #title h1 { font-family: Belleza, serif; font-weight: 400; font-size: 26px; margin: 0 0 2px; letter-spacing: .02em; }
+  #title p { margin: 0 0 10px; color: var(--sand-2); font-size: 14px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { padding: 4px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--sand-2); }
+  .chip b { color: var(--sand); font-weight: 500; }
+  #controls { top: 16px; left: 50%; transform: translateX(-50%); padding: 6px; display: flex; gap: 6px; }
+  .seg { display: flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+  button { font: 500 13px "Alegreya Sans", sans-serif; letter-spacing: .08em; text-transform: uppercase; color: var(--sand-2); background: transparent; border: 0; padding: 8px 14px; cursor: pointer; }
+  button:hover { color: var(--sand); background: rgba(239,236,230,.06); }
+  button[aria-pressed="true"] { color: var(--umber); background: var(--sand); }
+  button.accent { color: var(--sand); background: var(--maroon); border-radius: 999px; }
+  #hints { top: 16px; right: 16px; padding: 12px 16px; line-height: 1.7; color: var(--sand-2); }
+  #hints b { color: var(--sand); font-weight: 500; }
+  #actions { bottom: 16px; left: 16px; padding: 6px; display: flex; gap: 6px; }
+  #report { bottom: 72px; left: 16px; padding: 12px 16px; max-width: min(560px, calc(100vw - 32px)); max-height: 40vh; overflow: auto; display: none; line-height: 1.6; }
+  #report .err { color: #ff8a8d; } #report .warn { color: #ffd28c; } #report .ok { color: #9fd5a9; }
+  #labels { position: fixed; inset: 0; pointer-events: none; }
+  .lbl { position: absolute; transform: translate(-50%, -100%); padding: 2px 7px; border-radius: 999px; background: rgba(24,19,15,.7); color: var(--sand); white-space: nowrap; font-size: 10px; border: 1px solid var(--line); }
+  #loader { position: fixed; inset: 0; display: grid; place-items: center; background: radial-gradient(circle at 50% 55%, #241d18, var(--umber) 70%); z-index: 10; transition: opacity .7s cubic-bezier(.16,1,.3,1); }
+  #loader .flame { width: 14px; height: 14px; border-radius: 50%; margin: 0 auto 14px; background: radial-gradient(circle, #fff3dc, #ffc450 45%, rgba(254,120,40,0) 72%); box-shadow: 0 0 22px 6px rgba(255,170,60,.35); }
+  #err { position: fixed; bottom: 16px; right: 16px; color: #ff8a8d; display: none; max-width: 60vw; }
+  @media (max-width: 760px) {
+    #hints, #labels { display: none; }
+    #controls { top: auto; bottom: 72px; flex-wrap: wrap; justify-content: center; width: calc(100vw - 32px); }
+    #title { max-width: calc(100vw - 32px); }
+    #report { bottom: 128px; }
+  }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="labels"></div>
+
+<div id="title" class="panel">
+  <h1>GMC · Material Board</h1>
+  <p>Every M_* material and the shared rig, rendered the way every model review should look.</p>
+  <div class="chips mono">
+    <span class="chip">FPS::<b id="c-fps">–</b></span>
+    <span class="chip">MOOD::<b id="c-mood">–</b></span>
+    <span class="chip">MODE::<b id="c-mode">–</b></span>
+    <span class="chip">TRIS::<b id="c-tris">–</b></span>
+    <span class="chip">KIT::<b id="c-kit">–</b></span>
+  </div>
+</div>
+
+<div id="controls" class="panel">
+  <div class="seg" role="group" aria-label="Mood">
+    <button data-mood="dusk" aria-pressed="true">Dusk</button><button data-mood="day" aria-pressed="false">Day</button>
+  </div>
+  <div class="seg" role="group" aria-label="Fidelity">
+    <button data-clay="0" aria-pressed="true">Material</button><button data-clay="1" aria-pressed="false">Clay</button>
+  </div>
+  <div class="seg" role="group" aria-label="View">
+    <button data-view="V1" aria-pressed="false">V1</button><button data-view="V2" aria-pressed="true">V2</button><button data-view="V3" aria-pressed="false">V3</button><button data-view="V4" aria-pressed="false">V4</button><button data-view="V5" aria-pressed="false">V5</button>
+  </div>
+</div>
+
+<div id="hints" class="panel mono">
+  <b>Drag</b> orbit · <b>Right-drag</b> pan<br>
+  <b>Wheel</b> zoom to cursor<br>
+  <b>1–5</b> views · <b>D</b> dusk/day · <b>C</b> clay<br>
+  <b>L</b> labels · <b>V</b> validate
+</div>
+
+<div id="actions" class="panel">
+  <button id="b-validate">Validate</button>
+  <button id="b-shot">Screenshot</button>
+  <button id="b-glb" class="accent">Export GLB</button>
+</div>
+<div id="report" class="panel mono"></div>
+<div id="err" class="mono"></div>
+
+<div id="loader"><div class="mono" style="text-align:center;color:#efece6b8"><div class="flame"></div>BUILDING::TEXTURES</div></div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { createStage, createPlinth, metricUV, scaleUV, jitterInstanceColors, TOKENS, KIT_VERSION, countTriangles } from './gmc-kit.js';
+
+const $ = id => document.getElementById(id);
+try {
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));   // let the loader paint
+  const stage = createStage({ container: $('stage'), mood: 'dusk' });
+  const M = stage.materials;
+  window.__stage = stage;
+
+  // ── board model (follows design.md naming so the validator can check it) ──
+  const root = new THREE.Group(); root.name = 'gmc_env_material-board';
+  const L = n => { const g = new THREE.Group(); g.name = n; root.add(g); return g; };
+  const Lsw = L('L_swatches'), Ltile = L('L_tiles'), Lsample = L('L_sample'), Lenv = L('L_env');
+  root.add(createPlinth(M, { width: 46, depth: 34 }));
+  const labels = [];
+  const mesh = (geo, mat, parent, name) => { const m = new THREE.Mesh(geo, mat); m.name = name; parent.add(m); return m; };
+  const label = (text, obj, dy) => labels.push({ text, obj, dy });
+
+  // cubes: one per hero material, 3.2 m, 3 rows × 4
+  const cubeMats = ['M_timber_cedar', 'M_timber_dark', 'M_timber_painted', 'M_bamboo_slat',
+                    'M_lime_wall', 'M_stone_masonry', 'M_slate_roof', 'M_textile_tile',
+                    'M_gold', 'M_glass', 'M_clay', 'M_clay_roof'];
+  cubeMats.forEach((n, i) => {
+    const col = i % 4, row = Math.floor(i / 4);
+    // timber grain runs along U → point U along the member's long axis (here: x).
+    // bamboo slats and painted bands are authored to run vertically / horizontally with the default box UVs.
+    const along = n === 'M_timber_cedar' || n === 'M_timber_dark' ? 'x' : null;
+    const g = metricUV(new RoundedBoxGeometry(3.2, 3.2, 3.2, 5, .28), { along });
+    g.translate(0, 1.6, 0);
+    const m = mesh(g, M[n], Lsw, n.replace('M_', 'sw_'));
+    m.position.set(-19 + col * 5.2, 0, -12 + row * 5.6);
+    label(n, m, 3.6);
+  });
+
+  // flat landscape tiles
+  ['M_terrain', 'M_water', 'M_gravel', 'M_paddy', 'M_paddy_flooded'].forEach((n, i) => {
+    const g = metricUV(new RoundedBoxGeometry(4.2, .35, 4.2, 3, .1)); g.translate(0, .175, 0);
+    const m = mesh(g, M[n], Ltile, n.replace('M_', 'tile_')); m.position.set(-19 + i * 5, 0, 11);
+    label(n, m, .8);
+  });
+
+  // sample building: lime base, timber upper storey, kemar band, slate hip roof, glass + glow
+  const hx = 12, hz = -6;
+  const base = mesh(metricUV(new RoundedBoxGeometry(8, 3.5, 6.5, 3, .06)).translate(0, 1.75, 0), M.M_lime_wall, Lsample, 'house_base');
+  base.position.set(hx, 0, hz);
+  const upper = mesh(metricUV(new RoundedBoxGeometry(8.4, 3, 6.9, 3, .06), { along: 'x' }).translate(0, 5, 0), M.M_timber_cedar, Lsample, 'house_upper');
+  upper.position.set(hx, 0, hz);
+  const band = mesh(metricUV(new RoundedBoxGeometry(8.6, .6, 7.1, 2, .04)).translate(0, 6.8, 0), M.M_timber_painted, Lsample, 'house_kemar');
+  band.position.set(hx, 0, hz);
+  // hip roof: 4-sided cone turned 45° → square base with half-width 0.707; scale to 1.5 m eaves
+  const roofGeo = new THREE.ConeGeometry(1, 1, 4, 1); roofGeo.rotateY(Math.PI / 4); roofGeo.scale(5.8 / .707, 2.6, 4.9 / .707);
+  const roof = mesh(metricUV(roofGeo.toNonIndexed()), M.M_slate_roof, Lsample, 'house_roof');
+  roof.position.set(hx, 7.1 + 1.3, hz);
+  label('sample · lime + timber + kemar + slate', roof, 2.2);
+  for (let i = 0; i < 3; i++) {                                     // windows on the south (+Z) face
+    const x = hx - 2.6 + i * 2.6;
+    const glass = mesh(metricUV(new RoundedBoxGeometry(1.3, 1.6, .12, 2, .03)), M.M_glass, Lsample, 'win_glass_' + i);
+    // the sample wall has no openings, so the glow card sits just proud of the wall, behind the glass.
+    // In a real model: cut the opening and place the card 0.3 m behind the glass (design.md §3.2).
+    glass.position.set(x, 5, hz + 3.56);
+    const glow = mesh(new THREE.PlaneGeometry(1.2, 1.5), M.M_window_glow, Lsample, 'win_glow_' + i);
+    glow.position.set(x, 5, hz + 3.47);
+    glass.material = M.M_glass.clone(); glass.material.name = 'M_glass'; glass.material.transparent = true; glass.material.opacity = .55;
+  }
+  const door = mesh(metricUV(new RoundedBoxGeometry(1.2, 2.2, .2, 2, .03)).translate(0, 1.1, 0), M.M_timber_dark, Lsample, 'door');
+  door.position.set(hx, 0, hz + 3.28);
+
+  // medallion on a post
+  const post = mesh(metricUV(new RoundedBoxGeometry(.45, 3.2, .45, 2, .05), { along: 'y' }).translate(0, 1.6, 0), M.M_timber_dark, Lsample, 'medallion_post');
+  post.position.set(19, 0, 4);
+  const med = mesh(new THREE.CircleGeometry(.9, 64), M.M_medallion, Lsample, 'medallion');
+  med.position.set(19, 2.6, 4.25); label('M_medallion', med, 1.3);
+
+  // canopy: instanced blob trees
+  const crown = new THREE.IcosahedronGeometry(1, 2); crown.translate(0, 1, 0);
+  const trees = new THREE.InstancedMesh(crown, M.M_canopy, 9); trees.name = 'trees';
+  const trunk = new THREE.InstancedMesh(scaleUV(new THREE.CylinderGeometry(.12, .18, 1, 8), 1.0, 1).translate(0, .5, 0), M.M_timber_dark, 9); trunk.name = 'trunks';
+  const d = new THREE.Object3D();
+  for (let i = 0; i < 9; i++) {
+    const x = 6 + (i % 3) * 3.4 + (i * 1.7 % 1.1), z = 5 + Math.floor(i / 3) * 3.2, s = 1.2 + (i * .37 % .6);
+    d.position.set(x, 1.6 * s, z); d.scale.set(s, s * 1.15, s); d.rotation.set(0, i, 0); d.updateMatrix(); trees.setMatrixAt(i, d.matrix);
+    d.position.set(x, 0, z); d.scale.set(1, 1.8 * s, 1); d.updateMatrix(); trunk.setMatrixAt(i, d.matrix);
+  }
+  jitterInstanceColors(trees); Lenv.add(trunk, trees); label('M_canopy', trees, 6);
+
+  stage.add(root);
+  $('c-tris').textContent = countTriangles(root).toLocaleString();
+  $('c-kit').textContent = KIT_VERSION;
+
+  // ── UI ──
+  const press = (sel, val, attr) => document.querySelectorAll(sel).forEach(b => b.setAttribute('aria-pressed', String(b.dataset[attr] === String(val))));
+  const setMood = m => { stage.setMood(m); press('[data-mood]', m, 'mood'); $('c-mood').textContent = m.toUpperCase(); };
+  const setClay = on => { stage.setClay(on); press('[data-clay]', on ? 1 : 0, 'clay'); $('c-mode').textContent = on ? 'CLAY' : 'MATERIAL'; };
+  const setView = v => { stage.setView(v); press('[data-view]', v, 'view'); };
+  document.querySelectorAll('[data-mood]').forEach(b => b.onclick = () => setMood(b.dataset.mood));
+  document.querySelectorAll('[data-clay]').forEach(b => b.onclick = () => setClay(b.dataset.clay === '1'));
+  document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => setView(b.dataset.view));
+  let showLabels = true;
+  const validate = () => {
+    const r = stage.validate(root), el = $('report'); el.style.display = 'block';
+    el.innerHTML = `<div class="${r.ok ? 'ok' : 'err'}">${r.ok ? '✓ PASSES' : '✕ FAILS'} :: ${root.name}</div>`
+      + r.errors.map(e => `<div class="err">ERROR :: ${e}</div>`).join('')
+      + r.warnings.map(w => `<div class="warn">WARN :: ${w}</div>`).join('')
+      + `<div>TRIS :: ${r.stats.triangles.toLocaleString()} · SIZE :: ${r.stats.size.join(' × ')} m</div><div>MATERIALS :: ${r.stats.materials.join(', ')}</div>`;
+    return r;
+  };
+  $('b-validate').onclick = validate;
+  $('b-glb').onclick = () => stage.exportGLB(root);
+  $('b-shot').onclick = () => stage.screenshot(`${root.name}_${stage.mood}.png`);
+  addEventListener('keydown', e => {
+    if ('12345'.includes(e.key)) setView('V' + e.key);
+    else if (e.key === 'd') setMood(stage.mood === 'dusk' ? 'day' : 'dusk');
+    else if (e.key === 'c') setClay(!stage.clay);
+    else if (e.key === 'l') { showLabels = !showLabels; $('labels').style.display = showLabels ? '' : 'none'; }
+    else if (e.key === 'v') validate();
+  });
+  stage.onStats(({ fps }) => $('c-fps').textContent = Math.round(fps));
+
+  // labels follow their objects
+  const holder = $('labels'), els = labels.map(l => { const e = document.createElement('div'); e.className = 'lbl mono'; e.textContent = l.text; holder.appendChild(e); return e; });
+  const v = new THREE.Vector3(), bb = new THREE.Box3();
+  (function tick() {
+    labels.forEach((l, i) => {
+      bb.setFromObject(l.obj); bb.getCenter(v); v.y = bb.max.y + .3;
+      v.project(stage.camera); const on = v.z < 1 && Math.abs(v.x) < 1.05 && Math.abs(v.y) < 1.05;
+      els[i].style.display = on ? '' : 'none';
+      els[i].style.left = ((v.x + 1) / 2 * innerWidth) + 'px'; els[i].style.top = ((1 - v.y) / 2 * innerHeight) + 'px';
+    });
+    requestAnimationFrame(tick);
+  })();
+
+  setMood('dusk'); setClay(false);
+  window.__api = { stage, root, setMood, setClay, setView, validate };
+  requestAnimationFrame(() => { $('loader').style.opacity = 0; setTimeout(() => $('loader').remove(), 800); });
+  window.__ok = true;
+} catch (e) {
+  console.error(e); window.__err = String(e && e.stack || e);
+  $('err').style.display = 'block'; $('err').textContent = 'ERROR :: ' + e.message;
+  $('loader')?.remove();
+}
+</script>
+</body>
+</html>
