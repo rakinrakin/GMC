@@ -86,7 +86,15 @@ export function createOverlays(root: HTMLElement, opts: { onBackToTop(): void })
   wrap.appendChild(note);
   let pinnedNow = false;
   let selectedNow = false;
-  const syncNote = () => note.classList.toggle('is-on', pinnedNow && !selectedNow);
+  // The zone panel (bottom-left) can cover this button on phones: hide it while a zone is shown.
+  const syncNote = () => {
+    note.classList.toggle('is-on', pinnedNow && !selectedNow);
+    const topOn = pinnedNow && !selectedNow;
+    btn.classList.toggle('is-on', topOn);
+    btn.tabIndex = topOn ? 0 : -1;
+    btn.setAttribute('aria-hidden', topOn ? 'false' : 'true');
+    if (!topOn && document.activeElement === btn) btn.blur();
+  };
 
   root.appendChild(wrap);
 
@@ -104,10 +112,6 @@ export function createOverlays(root: HTMLElement, opts: { onBackToTop(): void })
       }
     },
     setPinned(pinned) {
-      btn.classList.toggle('is-on', pinned);
-      btn.tabIndex = pinned ? 0 : -1;
-      btn.setAttribute('aria-hidden', pinned ? 'false' : 'true');
-      if (!pinned && document.activeElement === btn) btn.blur();
       pinnedNow = pinned;
       syncNote();
     },

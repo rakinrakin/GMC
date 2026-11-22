@@ -350,6 +350,27 @@ describe('createScroll', () => {
 });
 
 describe('createOverlays', () => {
+  it('M1: back-to-top is hidden and not tabbable while a zone is selected, and returns after', () => {
+    const root = document.createElement('div');
+    const o = createOverlays(root, { onBackToTop: vi.fn() });
+    const btn = root.querySelector<HTMLButtonElement>('button')!;
+    o.setPinned(true);
+    expect(btn.classList.contains('is-on')).toBe(true);
+    o.setSelected(true);
+    expect(btn.classList.contains('is-on')).toBe(false);
+    expect(btn.tabIndex).toBe(-1);
+    expect(btn.getAttribute('aria-hidden')).toBe('true');
+    o.setSelected(false);
+    expect(btn.classList.contains('is-on')).toBe(true);
+    expect(btn.tabIndex).toBe(0);
+    expect(btn.getAttribute('aria-hidden')).toBe('false');
+    o.setSelected(true);
+    o.setPinned(false);
+    o.setSelected(false);
+    expect(btn.classList.contains('is-on')).toBe(false);
+    o.destroy();
+  });
+
   it('shows one caption at a time and the back-to-top button only when pinned', () => {
     const root = document.createElement('div');
     const onBackToTop = vi.fn();

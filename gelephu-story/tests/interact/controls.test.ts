@@ -44,6 +44,23 @@ function wheelOn(el: Element, deltaY: number, ctrlKey = false) {
 }
 
 describe('createControls', () => {
+  it('M4: the window wheel listener exists only while enabled', () => {
+    const add = vi.spyOn(window, 'addEventListener');
+    const remove = vi.spyOn(window, 'removeEventListener');
+    const { controls } = setup();
+    const wheelAdds = () => add.mock.calls.filter((c) => c[0] === 'wheel').length;
+    const wheelRemoves = () => remove.mock.calls.filter((c) => c[0] === 'wheel').length;
+    expect(wheelAdds()).toBe(0);
+    controls.enabled = true;
+    expect(wheelAdds()).toBe(1);
+    controls.enabled = true;
+    expect(wheelAdds()).toBe(1);
+    controls.enabled = false;
+    expect(wheelRemoves()).toBe(1);
+    add.mockRestore();
+    remove.mockRestore();
+  });
+
   it('starts at the map key view in orbit terms', () => {
     const { controls } = setup();
     const s = controls.state();

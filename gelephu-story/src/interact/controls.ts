@@ -201,7 +201,17 @@ export function createControls(stage: Pick<Stage, 'camera' | 'renderer'>, limits
   canvas.addEventListener('pointercancel', onPointerUp);
   canvas.addEventListener('pointerleave', onPointerLeave);
   // Capture on window: runs before the scroll controller's window listener sees the same event.
-  window.addEventListener('wheel', onWheel, { passive: false, capture: true });
+  // Registered only while enabled: a non-passive wheel listener delays story scrolling in Chromium.
+  let wheelBound = false;
+  const bindWheel = (on: boolean) => {
+    if (on === wheelBound) return;
+    wheelBound = on;
+    if (on) window.addEventListener('wheel', onWheel, { passive: false, capture: true });
+    else {
+      window.removeEventListener('wheel', onWheel, { capture: true });
+      consumed = false; // no wheel handling while disabled: the scroll controller owns every wheel
+    }
+  };
 
   const sph = new THREE.Spherical();
   const tmp = new THREE.Vector3();
@@ -213,6 +223,7 @@ export function createControls(stage: Pick<Stage, 'camera' | 'renderer'>, limits
     set enabled(v: boolean) {
       if (v === enabled) return;
       enabled = v;
+      bindWheel(v);
       reset();
     },
     update(dtMs: number) {
@@ -249,7 +260,7 @@ export function createControls(stage: Pick<Stage, 'camera' | 'renderer'>, limits
       canvas.removeEventListener('pointerup', onPointerUp);
       canvas.removeEventListener('pointercancel', onPointerUp);
       canvas.removeEventListener('pointerleave', onPointerLeave);
-      window.removeEventListener('wheel', onWheel, { capture: true });
+      bindWheel(false);
     },
   };
 }
