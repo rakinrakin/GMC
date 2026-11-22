@@ -100,6 +100,9 @@ export interface CloudOptions {
   manager?: THREE.LoadingManager;
 }
 
+/** Fixed seed for place(): deterministic letter mix and yaw. */
+const PLACE_SEED = 0x5eed;
+
 export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
@@ -578,12 +581,14 @@ function buildSet(opts: {
     },
     place(items: CardPlacement[]) {
       const n = Math.min(items.length, opts.capacity);
-      const letters = assignLetters(n, opts.rnd, opts.billboard ? SIDE_WEIGHTS : TOP_WEIGHTS);
+      // A fresh generator per call: the same items always give the same cards (no reshuffle per selection).
+      const rnd = mulberry32(PLACE_SEED);
+      const letters = assignLetters(n, rnd, opts.billboard ? SIDE_WEIGHTS : TOP_WEIGHTS);
       write(items.slice(0, n).map(([x, y, z, w], i) => ({
         letter: letters[i],
         pos: [x, y, z] as Vector3Tuple,
         width: w,
-        yaw: opts.billboard ? 0 : opts.rnd() * Math.PI * 2,
+        yaw: opts.billboard ? 0 : rnd() * Math.PI * 2,
         opacity: 1,
       })));
     },

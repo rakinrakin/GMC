@@ -223,6 +223,19 @@ describe('createClouds', () => {
     expect(sets.veil.count).toBe(CONFIG.clouds.veil);
   });
 
+  it('veil place() is deterministic: the same items give the same instance data', () => {
+    const { sets } = createClouds(fakeStage('desktop'));
+    const items = Array.from({ length: 12 }, (_, i) => [i * 3, i, 2, 8] as [number, number, number, number]);
+    const snap = () => {
+      const m = mesh(sets.veil.group);
+      return JSON.stringify([cards(m), Array.from(m.instanceMatrix.array.slice(0, m.count * 16))]);
+    };
+    sets.veil.place(items);
+    const a = snap();
+    sets.veil.place(items);
+    expect(snap()).toBe(a);
+  });
+
   it('update advances the shared time uniform', () => {
     const clouds = createClouds(fakeStage('desktop'));
     const u = (mesh(clouds.sets.deck.group).material as THREE.ShaderMaterial).uniforms.uTime;
