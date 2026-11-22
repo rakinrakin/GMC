@@ -6,6 +6,7 @@ import { toThree, type Vector3Tuple } from '../math/coords';
 import zonesJson from '../../public/assets/zones.json';
 import { loadImageData } from './imageData';
 import type { Stage } from './stage';
+import { MIST_COLOR, MIST_HEIGHT } from './palette';
 
 export interface TerrainUniforms {
   uHover: { value: number };
@@ -32,6 +33,35 @@ const NORMAL_WEIGHT = 0.15;
 const PLASTER_MIX = 0.78;
 const HOVER_LIGHTEN = 0.12;
 const FOCUS_FOG_MAX = 0.72;
+/**
+ * Width of the edge fade, as a fraction of each UV axis. Over it the colour goes to the mist and
+ * the height down to the mist plane, so the mesh never shows as a hard-edged slab (portrait
+ * framing pulls back far enough to see all four edges). At 16:9 the band stays off-screen.
+ */
+export const EDGE_FADE = 0.12;
+/**
+ * The far (north, v → 1) edge is seen at a grazing angle, which squeezes its band to a few
+ * pixels on portrait. It gets a wider band; the 16:9 map key frame ends at v ≈ 0.80, so 0.18 stays
+ * off-screen there.
+ */
+export const EDGE_FADE_FAR = 0.18;
+
+const smoothstep = (a: number, b: number, x: number) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+
+/** CPU mirror of the shader's edge factor: 0 on the mesh boundary, 1 from EDGE_FADE inward. */
+export function edgeFactor(u: number, v: number, edge = EDGE_FADE, far = EDGE_FADE_FAR): number {
+  return smoothstep(0, edge, Math.min(u, 1 - u, v)) * smoothstep(0, far, 1 - v);
+}
+
+const edgeGlsl = /* glsl */ `
+  float edgeFactor(vec2 uv) {
+    float d = min(min(uv.x, 1.0 - uv.x), uv.y);
+    return smoothstep(0.0, uEdge, d) * smoothstep(0.0, uEdgeFar, 1.0 - uv.y);
+  }
+`;
 
 const coreZone = (zonesJson as unknown as Array<{ id: number; centroidKm: [number, number]; core?: boolean }>)
   .find((z) => z.core);
@@ -40,11 +70,17 @@ const CORE_CENTROID: [number, number] = coreZone ? coreZone.centroidKm : [0, 0];
 const vertexShader = /* glsl */ `
   #include <common>
   #include <logdepthbuf_pars_vertex>
+  uniform float uEdge;
+  uniform float uEdgeFar;
+  uniform float uMistY;
   varying vec2 vUv;
   varying vec3 vWorld;
+  ${edgeGlsl}
   void main() {
     vUv = uv;
     vec4 wp = modelMatrix * vec4(position, 1.0);
+    // Ease the height down to the mist plane at the boundary: no silhouette standing at the edge.
+    wp.y = mix(uMistY, wp.y, edgeFactor(uv));
     vWorld = wp.xyz;
     gl_Position = projectionMatrix * viewMatrix * wp;
     #include <logdepthbuf_vertex>
@@ -65,8 +101,11 @@ const fragmentShader = /* glsl */ `
   uniform float uFocus;
   uniform vec2 uFocusCenter;
   uniform vec2 uFogRange;
+  uniform float uEdge;
+  uniform float uEdgeFar;
   varying vec2 vUv;
   varying vec3 vWorld;
+  ${edgeGlsl}
 
   // x: zone colour strength, y: hover strength, for one zone-id texel.
   vec2 zoneWeights(ivec2 p, ivec2 size) {
@@ -106,6 +145,8 @@ const fragmentShader = /* glsl */ `
 
     float d = distance(vWorld.xz, uFocusCenter);
     col = mix(col, uMist, uFocus * smoothstep(uFogRange.x, uFogRange.y, d) * ${FOCUS_FOG_MAX.toFixed(2)});
+    // Edge fade: exactly the mist colour on the boundary, where the mist disc takes over.
+    col = mix(uMist, col, edgeFactor(vUv));
 
     gl_FragColor = vec4(col, 1.0);
     #include <tonemapping_fragment>
@@ -134,7 +175,10 @@ export function createTerrainMaterial(
       uSun: { value: sun },
       uZoneColor: { value: new THREE.Color(CONFIG.colors.zone) },
       uPlaster: { value: new THREE.Color(CONFIG.colors.plaster) },
-      uMist: { value: new THREE.Color(CONFIG.colors.mist) },
+      uMist: MIST_COLOR,
+      uEdge: { value: EDGE_FADE },
+      uEdgeFar: { value: EDGE_FADE_FAR },
+      uMistY: { value: MIST_HEIGHT },
       uFogRange: { value: new THREE.Vector2(CONFIG.fog.near, CONFIG.fog.far) },
     },
     vertexShader,

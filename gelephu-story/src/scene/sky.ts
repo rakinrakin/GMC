@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config';
 import type { Stage } from './stage';
+import { MIST_COLOR, MIST_HEIGHT } from './palette';
 
-const MIST_HEIGHT = 0.37;
 const SKY_RADIUS = 2500;
 /**
  * Mist disc radius (km). The terrain reaches ~155 km from the centre (corners), so the fade below
@@ -77,7 +77,7 @@ export function createSky(stage: Stage): Sky {
     new THREE.ShaderMaterial({
       depthWrite: false,
       uniforms: {
-        uMist: { value: new THREE.Color(CONFIG.colors.mist) },
+        uMist: MIST_COLOR,
         // Same Color instance as the dome: the two can never drift apart.
         uHorizon: dome.material.uniforms.uHorizon,
         uFade: { value: new THREE.Vector2(MIST_FADE[0] * MIST_RADIUS, MIST_FADE[1] * MIST_RADIUS) },

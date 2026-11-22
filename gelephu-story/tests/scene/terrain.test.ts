@@ -29,7 +29,9 @@ vi.mock('../../src/scene/imageData', () => ({
   },
 }));
 
-import { createTerrainMaterial, loadTerrain } from '../../src/scene/terrain';
+import { createTerrainMaterial, loadTerrain, edgeFactor } from '../../src/scene/terrain';
+import { createSky } from '../../src/scene/sky';
+import { MIST_COLOR, MIST_HEIGHT } from '../../src/scene/palette';
 import type { Stage } from '../../src/scene/stage';
 
 beforeEach(() => {
@@ -91,5 +93,38 @@ describe('detectTier', () => {
     expect(detectTier(true, 1920)).toBe('mobile');
     expect(detectTier(false, 819)).toBe('mobile');
     expect(detectTier(false, 820)).toBe('desktop');
+  });
+});
+
+describe('terrain edge fade', () => {
+  it('fades colour and height to the shared mist over the outer 12% of UV', () => {
+    const t = new THREE.Texture();
+    const { material } = createTerrainMaterial({ color: t, normal: t, zones: t });
+    expect(material.uniforms.uEdge.value).toBeCloseTo(0.12, 6);
+    expect(material.uniforms.uMistY.value).toBeCloseTo(MIST_HEIGHT, 6);
+    // One mist colour for terrain edge, focus fog and the sky's mist disc.
+    expect(material.uniforms.uMist).toBe(MIST_COLOR);
+    const sky = createSky({ scene: new THREE.Scene() } as unknown as Stage);
+    expect((sky.mist.material as THREE.ShaderMaterial).uniforms.uMist).toBe(MIST_COLOR);
+    expect(material.vertexShader).toContain('uEdge');
+    expect(material.fragmentShader).toContain('uEdge');
+  });
+  it('the far edge (v → 1) has a wider band that ends before the 16:9 frame top (v ≈ 0.80)', () => {
+    const t = new THREE.Texture();
+    const { material } = createTerrainMaterial({ color: t, normal: t, zones: t });
+    expect(material.uniforms.uEdgeFar.value).toBeGreaterThan(0.12);
+    expect(edgeFactor(0.5, 0.8)).toBe(1);
+    expect(edgeFactor(0.5, 0.9)).toBeLessThan(edgeFactor(0.5, 0.1));
+  });
+  it('edgeFactor: 0 at the boundary, 1 from 12% inward', () => {
+    expect(edgeFactor(0, 0.5)).toBe(0);
+    expect(edgeFactor(0.5, 1)).toBe(0);
+    expect(edgeFactor(0.12, 0.5)).toBe(1);
+    expect(edgeFactor(0.5, 0.5)).toBe(1);
+    const mid = edgeFactor(0.06, 0.5);
+    expect(mid).toBeGreaterThan(0);
+    expect(mid).toBeLessThan(1);
+    expect(edgeFactor(0.97, 0.5)).toBeCloseTo(edgeFactor(0.03, 0.5), 9);
+    expect(edgeFactor(0.5, 0.03)).toBeCloseTo(edgeFactor(0.03, 0.5), 9);
   });
 });
