@@ -64,6 +64,12 @@ describe('createScroll', () => {
   let trackEl: HTMLElement;
   let clock = 0;
   const now = () => clock;
+  const live: Array<{ destroy(): void }> = [];
+  const make = (o: Parameters<typeof createScroll>[0]) => {
+    const sc = createScroll(o);
+    live.push(sc);
+    return sc;
+  };
   beforeEach(() => {
     trackEl = document.createElement('div');
     document.body.appendChild(trackEl);
@@ -71,6 +77,7 @@ describe('createScroll', () => {
     clock = 1000;
   });
   afterEach(() => {
+    while (live.length) live.pop()!.destroy();
     trackEl.remove();
   });
 
@@ -84,7 +91,7 @@ describe('createScroll', () => {
       deselect: vi.fn(() => { current = 0; }),
       current: () => current,
     };
-    const scroll = createScroll({ trackEl, onT, onEnd, onLeaveEnd, selection, now, reducedMotion: false });
+    const scroll = make({ trackEl, onT, onEnd, onLeaveEnd, selection, now, reducedMotion: false });
     const max = 800 * CONFIG.scrollVh - 800;
     return { win, onT, onEnd, onLeaveEnd, selection, scroll, max, select: (id: number) => { current = id; } };
   }
@@ -180,6 +187,107 @@ describe('createScroll', () => {
     win.userScroll(max);
     expect(scroll.state()).toBe('scrolling');
     expect(onEnd).toHaveBeenCalledTimes(1);
+    scroll.destroy();
+  });
+
+  it('a touch swipe while pinned neither deselects nor unpins (touch belongs to the map)', () => {
+    const { win, scroll, max, selection } = setup(4);
+    win.userScroll(max);
+    const touch = (type: string, y: number) => {
+      const e = new Event(type) as Event & { touches: Array<{ clientY: number }> };
+      Object.defineProperty(e, 'touches', { value: [{ clientY: y }] });
+      window.dispatchEvent(e);
+    };
+    touch('touchstart', 100);
+    touch('touchmove', 300);
+    touch('touchstart', 100);
+    touch('touchmove', 300);
+    expect(selection.deselect).not.toHaveBeenCalled();
+    expect(scroll.state()).toBe('pinned');
+    scroll.destroy();
+  });
+
+  it('held ArrowUp (repeat events) deselects once and does not also unpin within the gesture window', () => {
+    const { win, scroll, max, selection } = setup(4);
+    win.userScroll(max);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' }));
+    expect(selection.deselect).toHaveBeenCalledTimes(1);
+    for (let i = 0; i < 5; i++) {
+      clock += 30;
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', repeat: true }));
+    }
+    clock += 30;
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' }));
+    expect(selection.deselect).toHaveBeenCalledTimes(1);
+    expect(scroll.state()).toBe('pinned');
+    clock += 1000;
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' }));
+    expect(scroll.state()).toBe('scrolling');
+    scroll.destroy();
+  });
+
+  it('modifier+ArrowUp and keys typed into inputs are ignored', () => {
+    const { win, scroll, max } = setup(0);
+    win.userScroll(max);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', metaKey: true }));
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', shiftKey: true }));
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    clock += 1000;
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+    input.remove();
+    expect(scroll.state()).toBe('pinned');
+    scroll.destroy();
+  });
+
+  it('pinned sets overscroll-behavior none on html and body and restores it on unpin', () => {
+    const { win, scroll, max } = setup(0);
+    win.userScroll(max);
+    expect(document.documentElement.style.overscrollBehavior).toBe('none');
+    expect(document.body.style.overscrollBehavior).toBe('none');
+    wheel(-40);
+    expect(document.documentElement.style.overscrollBehavior).toBe('');
+    expect(document.body.style.overscrollBehavior).toBe('');
+    scroll.destroy();
+  });
+
+  it('a pinned resize keeps it pinned at the track end, and skips scrollTo when max is unchanged', () => {
+    const { win, scroll, max } = setup(0);
+    win.userScroll(max);
+    win.scrollTo.mockClear();
+    window.dispatchEvent(new Event('resize'));
+    expect(win.scrollTo).not.toHaveBeenCalled();
+    window.innerHeight = 700;
+    window.dispatchEvent(new Event('resize'));
+    expect(scroll.state()).toBe('pinned');
+    expect(win.y).toBe(700 * CONFIG.scrollVh - 700);
+    expect(scroll.t()).toBe(1);
+    scroll.destroy();
+  });
+
+  it('init at the track end pins immediately', () => {
+    const win = mockWindow(800);
+    win.userScroll(800 * CONFIG.scrollVh - 800);
+    const onEnd = vi.fn();
+    const scroll = make({
+      trackEl, onT: () => {}, onEnd, onLeaveEnd: () => {},
+      selection: { deselect: () => {}, current: () => 0 }, now,
+    });
+    expect(scroll.state()).toBe('pinned');
+    expect(scroll.t()).toBe(1);
+    expect(onEnd).toHaveBeenCalledTimes(1);
+    scroll.destroy();
+  });
+
+  it('initialT scrolls there on creation and t() reflects it at once', () => {
+    const win = mockWindow(800);
+    win.userScroll(0);
+    const scroll = make({
+      trackEl, onT: () => {}, onEnd: () => {}, onLeaveEnd: () => {},
+      selection: { deselect: () => {}, current: () => 0 }, now, initialT: 0.6,
+    });
+    expect(scroll.t()).toBeCloseTo(0.6, 5);
+    expect(win.y).toBeCloseTo(0.6 * (800 * CONFIG.scrollVh - 800), 3);
     scroll.destroy();
   });
 

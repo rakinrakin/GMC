@@ -34,8 +34,10 @@ export interface ScrollOptions {
   onLeaveEnd(): void;
   selection: SelectionLike;
   reducedMotion?: boolean;
-  /** Clock for wheel gesture grouping (tests). */
+  /** Clock for wheel/key gesture grouping (tests). */
   now?: () => number;
+  /** Scroll to this t on creation (dev ?t=); pins at once if it is the end. */
+  initialT?: number;
 }
 
 export interface Scroll {
@@ -45,10 +47,8 @@ export interface Scroll {
   destroy(): void;
 }
 
-/** Wheel events closer together than this belong to one gesture (trackpad momentum). */
+/** Wheel or key events closer together than this belong to one gesture (trackpad momentum). */
 const GESTURE_GAP_MS = 250;
-/** Finger travel (px, downward = scroll up) that counts as an upward touch gesture. */
-const TOUCH_THRESHOLD = 30;
 /** How far up the page moves when an upward gesture unpins it. */
 const UNPIN_NUDGE_PX = 80;
 /** t at or above this counts as the end of the track. */
@@ -59,14 +59,14 @@ export function createScroll(opts: ScrollOptions): Scroll {
   const now = opts.now ?? (() => performance.now());
   const reduced = opts.reducedMotion ?? false;
   const body = document.body;
+  const html = document.documentElement;
 
   let state: ScrollState = 'scrolling';
   let armed = true;
   let t = 0;
-  let lastWheel = -Infinity;
-  let gestureUsed = false;
-  let touchY: number | null = null;
-  let touchUsed = false;
+  let lastMax = 0;
+  const wheelGesture = { last: -Infinity, used: false };
+  const keyGesture = { last: -Infinity, used: false };
 
   const trackHeight = () => window.innerHeight * CONFIG.scrollVh;
   const maxScroll = () => Math.max(1, trackHeight() - window.innerHeight);
@@ -74,19 +74,28 @@ export function createScroll(opts: ScrollOptions): Scroll {
 
   function layout() {
     trackEl.style.height = `${trackHeight()}px`;
+    lastMax = maxScroll();
+  }
+
+  function setLocked(locked: boolean) {
+    const v = locked ? 'none' : '';
+    body.style.overflow = locked ? 'hidden' : '';
+    html.style.overscrollBehavior = v;
+    body.style.overscrollBehavior = v;
   }
 
   function pin() {
     state = 'pinned';
     armed = false;
-    body.style.overflow = 'hidden';
+    t = 1;
+    setLocked(true);
     opts.onEnd();
   }
 
   function unpin() {
     if (state !== 'pinned') return;
     state = 'scrolling';
-    body.style.overflow = '';
+    setLocked(false);
     opts.onLeaveEnd();
   }
 
@@ -117,47 +126,64 @@ export function createScroll(opts: ScrollOptions): Scroll {
     window.scrollTo(0, Math.max(0, maxScroll() - UNPIN_NUDGE_PX));
   }
 
-  function onWheel(e: WheelEvent) {
-    if (state !== 'pinned') return;
+  /** True for the first event of a gesture (events < GESTURE_GAP_MS apart are one gesture). */
+  function claimGesture(g: { last: number; used: boolean }): boolean {
     const time = now();
-    const fresh = time - lastWheel > GESTURE_GAP_MS;
-    lastWheel = time;
-    if (fresh) gestureUsed = false;
-    if (e.deltaY >= 0 || gestureUsed) return;
-    gestureUsed = true;
-    upwardGesture();
+    if (time - g.last > GESTURE_GAP_MS) g.used = false;
+    g.last = time;
+    if (g.used) return false;
+    g.used = true;
+    return true;
   }
 
-  function onTouchStart(e: TouchEvent) {
-    touchY = e.touches[0]?.clientY ?? null;
-    touchUsed = false;
-  }
-  function onTouchMove(e: TouchEvent) {
-    if (state !== 'pinned' || touchY === null || touchUsed) return;
-    const y = e.touches[0]?.clientY;
-    if (y !== undefined && y - touchY > TOUCH_THRESHOLD) {
-      touchUsed = true;
-      upwardGesture();
+  function onWheel(e: WheelEvent) {
+    if (state !== 'pinned') return;
+    if (e.deltaY >= 0) {
+      wheelGesture.last = now();
+      return;
     }
+    if (claimGesture(wheelGesture)) upwardGesture();
   }
+
+  // No touch handling: touch input while pinned belongs to the map. On touch devices the ways
+  // back are the Back to top button and the selection panel's own close control.
+
+  function isEditable(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) return false;
+    return target.isContentEditable || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA'
+      || target.tagName === 'SELECT' || target.getAttribute('contenteditable') === 'true';
+  }
+
   function onKey(e: KeyboardEvent) {
-    if (e.key === 'ArrowUp' || e.key === 'PageUp' || e.key === 'Home') upwardGesture();
+    if (state !== 'pinned') return;
+    if (e.key !== 'ArrowUp' && e.key !== 'PageUp' && e.key !== 'Home') return;
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || isEditable(e.target)) return;
+    if (e.repeat) {
+      keyGesture.last = now();
+      return;
+    }
+    if (claimGesture(keyGesture)) upwardGesture();
   }
 
   function onResize() {
-    const keep = state === 'pinned' ? 1 : t;
+    if (state === 'pinned') {
+      layout(); // updates lastMax
+      if (Math.abs(window.scrollY - lastMax) > 0.5) window.scrollTo(0, lastMax);
+      return;
+    }
+    const keep = t;
     layout();
-    window.scrollTo(0, keep * maxScroll());
+    window.scrollTo(0, keep * lastMax);
   }
 
   layout();
+  if (opts.initialT !== undefined) window.scrollTo(0, clamp01(opts.initialT) * maxScroll());
   t = readT();
   opts.onT(t);
+  if (t >= END_T) pin();
 
   window.addEventListener('scroll', onScroll, { passive: true });
   window.addEventListener('wheel', onWheel, { passive: true });
-  window.addEventListener('touchstart', onTouchStart, { passive: true });
-  window.addEventListener('touchmove', onTouchMove, { passive: true });
   window.addEventListener('keydown', onKey);
   window.addEventListener('resize', onResize);
 
@@ -173,11 +199,9 @@ export function createScroll(opts: ScrollOptions): Scroll {
     destroy() {
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('wheel', onWheel);
-      window.removeEventListener('touchstart', onTouchStart);
-      window.removeEventListener('touchmove', onTouchMove);
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('resize', onResize);
-      body.style.overflow = '';
+      setLocked(false);
     },
   };
 }

@@ -31,27 +31,25 @@ if (app) {
   track.setAttribute('aria-hidden', 'true');
   document.body.appendChild(track);
 
-  let pinned = false;
+  // Dev only: ?t=<0..1> starts the page scrolled to that point of the story.
+  const tRaw = import.meta.env.DEV ? new URLSearchParams(location.search).get('t') : null;
+  const tParam = tRaw === null || tRaw === '' ? NaN : Number(tRaw);
+  const initialT = Number.isFinite(tParam) ? Math.min(1, Math.max(0, tParam)) : undefined;
+  if (initialT !== undefined) history.scrollRestoration = 'manual';
+
   const overlays = createOverlays(document.body, { onBackToTop: () => scroll.scrollToStart() });
   const scroll = createScroll({
     trackEl: track,
     selection,
     reducedMotion,
+    initialT,
     onT: () => {},
-    onEnd: () => { pinned = true; overlays.setPinned(true); },
-    onLeaveEnd: () => { pinned = false; overlays.setPinned(false); },
+    onEnd: () => overlays.setPinned(true),
+    onLeaveEnd: () => overlays.setPinned(false),
   });
 
-  // Dev only: ?t=<0..1> starts the page scrolled to that point of the story.
-  const tRaw = import.meta.env.DEV ? new URLSearchParams(location.search).get('t') : null;
-  const tParam = tRaw === null || tRaw === '' ? NaN : Number(tRaw);
-  if (Number.isFinite(tParam)) {
-    history.scrollRestoration = 'manual';
-    const t0 = Math.min(1, Math.max(0, tParam));
-    window.scrollTo(0, t0 * (window.innerHeight * CONFIG.scrollVh - window.innerHeight));
-  }
-
   // The camera eases toward the scroll position; reduced motion follows it exactly.
+  // It starts at the current scroll position (incl. ?t= or scroll restoration), with no ease-up from 0.
   let shownT = scroll.t();
   const applyT = (t: number) => {
     const key = sampleTimeline(CONFIG.timeline, t);
@@ -73,7 +71,7 @@ if (app) {
   let last = performance.now();
   stage.renderer.setAnimationLoop((now: number) => {
     const dt = now - last;
-    const target = pinned ? 1 : scroll.t();
+    const target = scroll.state() === 'pinned' ? 1 : scroll.t();
     if (shownT !== target) {
       shownT = reducedMotion ? target : approach(shownT, target, dt, SCROLL_SMOOTH_MS);
       applyT(shownT);
