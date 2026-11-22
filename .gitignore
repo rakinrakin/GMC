@@ -13,3 +13,4 @@ data/landcover/
 data/map/_*
 
 .DS_Store
+.superpowers/
