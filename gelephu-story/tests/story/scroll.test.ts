@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { CONFIG } from '../../src/config';
-import { createScroll, opacityCurves, approach } from '../../src/story/scroll';
+import { createScroll, opacityCurves, approach, captionFor } from '../../src/story/scroll';
 import { createOverlays } from '../../src/story/overlays';
 
 describe('opacityCurves', () => {
@@ -23,6 +23,14 @@ describe('opacityCurves', () => {
     expect(opacityCurves(0.65).caption).toBe(0);
     expect(opacityCurves(0.25).deck).toBe(1);
     expect(opacityCurves(0.5).deck).toBe(0);
+  });
+});
+
+describe('captionFor', () => {
+  it('hides the caption while a zone is selected and restores the curve after', () => {
+    expect(captionFor(1, true)).toBe(0);
+    expect(captionFor(1, false)).toBe(opacityCurves(1).caption);
+    expect(captionFor(1, false)).toBe(3);
   });
 });
 
@@ -182,10 +190,16 @@ describe('createScroll', () => {
     clock += 50;
     wheel(-40);
     expect(scroll.state()).toBe('pinned');
-    // A selected zone still deselects first, regardless of the predicate.
+    // Selected, but the map used the wheel (e.g. over the zone panel): no deselect, no unpin.
     clock += 1000;
     current = 3;
     accept = false;
+    wheel(-40);
+    expect(selection.deselect).not.toHaveBeenCalled();
+    expect(scroll.state()).toBe('pinned');
+    // Selected and accepted: deselect first.
+    clock += 1000;
+    accept = true;
     wheel(-40);
     expect(selection.deselect).toHaveBeenCalledTimes(1);
     expect(scroll.state()).toBe('pinned');

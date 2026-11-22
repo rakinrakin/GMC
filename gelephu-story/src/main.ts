@@ -9,17 +9,20 @@ import { createVision } from './scene/vision';
 import { createControls } from './interact/controls';
 import { createSelection } from './interact/selection';
 import { pickZone } from './interact/picking';
+import { createHover } from './interact/hover';
 import { createMapUi } from './ui/panel';
 import zonesJson from '../public/assets/zones.json';
-import { Vector2 } from 'three';
+import { Quaternion, Vector2, Vector3 } from 'three';
 import { gsap } from 'gsap';
-import { createScroll, opacityCurves, approach } from './story/scroll';
+import { createScroll, opacityCurves, approach, captionFor } from './story/scroll';
 import { createOverlays } from './story/overlays';
 
 /** Time constant of the camera easing toward the scroll position. */
 const SCROLL_SMOOTH_MS = 140;
 /** Minimum time between hover raycasts. */
 const HOVER_PICK_MS = 50;
+/** Leaving the pin, the camera blends from its map pose (orbited / zone view) to the timeline. */
+const LEAVE_BLEND_MS = 800;
 
 const app = document.getElementById('app');
 if (app) {
@@ -52,7 +55,8 @@ if (app) {
     zones: CONFIG.zones,
     onClose: () => selection.deselect(),
     onSelect: (id) => {
-      if (live) selection.select(id);
+      // Needs the terrain uniforms; before load a keyboard select would have nothing to show.
+      if (live && terrain) selection.select(id);
     },
     onFocusZone: (id) => setHover(live ? id : 0),
   });
@@ -69,6 +73,8 @@ if (app) {
     // The scroll timeline owns the camera until it has settled on the map key.
     cameraAllowed: () => live && shownT === 1,
     duration: reducedMotion ? 0.01 : 1.6,
+    // The map caption gives the sky to the vision while a zone is selected.
+    onChange: (id) => overlays.setCaption(captionFor(shownT, id !== 0)),
   });
 
   function setHover(id: number) {
@@ -82,9 +88,17 @@ if (app) {
   };
   const pickAt = (x: number, y: number) => (terrain ? pickZone(toNdc(x, y), stage, terrain) : 0);
 
-  /** Latest mouse position still to be hover-picked by the render loop. */
-  let hoverAt: { x: number; y: number } | null = null;
-  let lastHoverPick = -Infinity;
+  const hover = createHover({
+    pick: pickAt,
+    show: (id, x, y) => {
+      setHover(id);
+      ui.label(id ? zoneName(id) : null, x, y);
+      canvas.style.cursor = id ? 'pointer' : '';
+    },
+    // No picking while a zone is selected or easing (and none before the map is live).
+    active: () => live && selection.current() === 0 && !selection.busy(),
+    intervalMs: HOVER_PICK_MS,
+  });
 
   const controls = createControls(stage, CONFIG.limits, {
     target: MAP.target,
@@ -96,14 +110,9 @@ if (app) {
       if (id) selection.select(id);
     },
     onHover: (x, y) => {
-      if (canHover) hoverAt = { x, y };
+      if (canHover) hover.move(x, y);
     },
-    onHoverEnd: () => {
-      hoverAt = null;
-      setHover(0);
-      ui.label(null);
-      canvas.style.cursor = '';
-    },
+    onHoverEnd: () => hover.end(),
   });
 
   function setLive(on: boolean) {
@@ -112,13 +121,11 @@ if (app) {
     ui.setActive(on);
     // Drags and pinches belong to the map only while pinned; otherwise touch scrolls the story.
     canvas.style.touchAction = on ? 'none' : '';
-    if (!on) {
-      hoverAt = null;
-      setHover(0);
-      ui.label(null);
-      canvas.style.cursor = '';
-    }
+    if (!on) hover.end();
   }
+
+  /** Camera pose at the moment the pin was left, blended out over LEAVE_BLEND_MS. */
+  let leave: { pos: Vector3; quat: Quaternion; fov: number; k: number } | null = null;
 
   // Dev only: a handle for console inspection.
   if (import.meta.env.DEV) {
@@ -149,10 +156,13 @@ if (app) {
     onT: () => {},
     onEnd: () => {
       overlays.setPinned(true);
+      leave = null;
       setLive(true);
     },
     onLeaveEnd: () => {
       overlays.setPinned(false);
+      const cam = stage.camera;
+      leave = reducedMotion ? null : { pos: cam.position.clone(), quat: cam.quaternion.clone(), fov: cam.fov, k: 0 };
       setLive(false);
     },
     // The map zooms out first; only a gesture that starts fully zoomed out goes to the story.
@@ -164,22 +174,32 @@ if (app) {
   let shownT = scroll.t();
   const applyT = (t: number) => {
     const key = sampleTimeline(CONFIG.timeline, t);
-    stage.camera.position.set(...toThree(key.pos));
-    if (stage.camera.fov !== key.fov) {
-      stage.camera.fov = key.fov;
-      stage.camera.updateProjectionMatrix();
+    const cam = stage.camera;
+    cam.position.set(...toThree(key.pos));
+    cam.lookAt(...toThree(key.target));
+    let fov = key.fov;
+    if (leave) {
+      const e = leave.k * leave.k * (3 - 2 * leave.k);
+      cam.position.lerpVectors(leave.pos, cam.position, e);
+      cam.quaternion.slerpQuaternions(leave.quat, cam.quaternion, e);
+      fov = leave.fov + (key.fov - leave.fov) * e;
     }
-    stage.camera.lookAt(...toThree(key.target));
+    if (cam.fov !== fov) {
+      cam.fov = fov;
+      cam.updateProjectionMatrix();
+    }
     const c = opacityCurves(t);
     clouds.sets.deck.setOpacity(c.deck);
     clouds.sets.breakup.setOpacity(c.breakup);
-    overlays.setCaption(c.caption);
+    overlays.setCaption(captionFor(t, selection.current() !== 0));
   };
   applyT(shownT);
 
   loadTerrain(stage, () => {})
     .then((t) => {
       terrain = t;
+      // A selection made (or finished) before the terrain arrived.
+      selection.sync();
     })
     .catch((err) => console.error('Terrain failed to load', err));
 
@@ -187,22 +207,19 @@ if (app) {
   stage.renderer.setAnimationLoop((now: number) => {
     const dt = now - last;
     const target = scroll.state() === 'pinned' ? 1 : scroll.t();
-    if (shownT !== target) {
+    if (leave) leave.k = Math.min(1, leave.k + dt / LEAVE_BLEND_MS);
+    if (shownT !== target || leave) {
+      const wasSettled = shownT === 1;
       shownT = reducedMotion ? target : approach(shownT, target, dt, SCROLL_SMOOTH_MS);
       applyT(shownT);
+      if (leave && leave.k >= 1) leave = null;
+      // The camera is handed to the map: catch up on any selection that started meanwhile.
+      if (!wasSettled && shownT === 1 && live) selection.sync();
     } else if (live && selection.current() === 0 && !selection.busy()) {
       // Map key reached and nothing selected: the orbit controls own the camera.
       controls.update(dt);
     }
-    // A terrain raycast costs several ms on the desktop mesh: hover picks at most every HOVER_PICK_MS.
-    if (hoverAt && live && now - lastHoverPick >= HOVER_PICK_MS) {
-      lastHoverPick = now;
-      const id = pickAt(hoverAt.x, hoverAt.y);
-      setHover(id);
-      ui.label(id ? zoneName(id) : null, hoverAt.x, hoverAt.y);
-      canvas.style.cursor = id ? 'pointer' : '';
-      hoverAt = null;
-    }
+    hover.frame(now);
     clouds.update(dt, stage.camera);
     last = now;
     stage.renderer.render(stage.scene, stage.camera);

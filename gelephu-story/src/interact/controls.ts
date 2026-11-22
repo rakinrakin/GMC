@@ -26,6 +26,8 @@ export interface ControlsOptions {
   /** Mouse moving over the canvas with no button held. */
   onHover?(clientX: number, clientY: number): void;
   onHoverEnd?(): void;
+  /** Elements whose wheel events count as map input (the zone panel). Default: inside `.map-ui`. */
+  isMapUi?: (el: Element) => boolean;
 }
 
 export interface Controls {
@@ -55,6 +57,7 @@ export function createControls(stage: Pick<Stage, 'camera' | 'renderer'>, limits
   const { camera } = stage;
   const canvas = stage.renderer.domElement;
   const locked = opts.locked ?? (() => false);
+  const isMapUi = opts.isMapUi ?? ((el: Element) => el.closest('.map-ui') !== null);
 
   const target = new THREE.Vector3(...toThree(opts.target));
   const offset0 = new THREE.Vector3(...toThree(opts.startPos)).sub(target);
@@ -150,15 +153,28 @@ export function createControls(stage: Pick<Stage, 'camera' | 'renderer'>, limits
 
   function onWheel(e: WheelEvent) {
     consumed = false;
-    if (!enabled || e.target !== canvas) return;
+    if (!enabled) return;
+    const onCanvas = e.target === canvas;
+    const onUi = !onCanvas && e.target instanceof Element && isMapUi(e.target);
+    if (!onCanvas && !onUi) return;
     e.preventDefault(); // no page scroll and no browser pinch zoom while the map is live
     const now = performance.now();
     const sameGesture = now - wheelGesture.last <= GESTURE_GAP_MS;
     wheelGesture.last = now;
-    if (locked()) {
-      // The scroll controller deselects on this gesture; none of it may zoom.
-      wheelGesture.swallow = true;
+    const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+
+    if (e.ctrlKey) {
+      // Trackpad pinch: always the map's (never deselects or unpins). Natural direction:
+      // spreading (deltaY < 0) zooms in.
       consumed = true;
+      if (!locked()) set({ ...s, distance: s.distance * Math.exp(dy * PINCH_WHEEL_ZOOM) });
+      return;
+    }
+    if (locked()) {
+      // A zone is selected: nothing in this gesture may zoom. On the map the scroll controller
+      // deselects with it; over the zone panel it belongs to the panel.
+      wheelGesture.swallow = true;
+      consumed = onUi;
       return;
     }
     if (wheelGesture.swallow && sameGesture) {
@@ -166,12 +182,11 @@ export function createControls(stage: Pick<Stage, 'camera' | 'renderer'>, limits
       return;
     }
     wheelGesture.swallow = false;
-    const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
     // Upward at the zoom-out limit: not ours (the scroll controller may unpin).
     if (dy < 0 && s.distance >= limits.distance[1]) return;
     consumed = true;
     // Scroll down = go deeper.
-    set({ ...s, distance: s.distance * Math.exp(-dy * (e.ctrlKey ? PINCH_WHEEL_ZOOM : WHEEL_ZOOM)) });
+    set({ ...s, distance: s.distance * Math.exp(-dy * WHEEL_ZOOM) });
   }
 
   canvas.addEventListener('pointerdown', onPointerDown);

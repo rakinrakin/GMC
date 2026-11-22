@@ -10,6 +10,8 @@ export const VISION = {
   /** project_spire.webp is 1942 × 1082. */
   aspect: 1082 / 1942,
   haze: '#CCD6E5',
+  /** The photo's own sky (sRGB, ~rgb(170,195,210)) is keyed out so our sky shows through. */
+  skyKey: [170 / 255, 195 / 255, 210 / 255] as [number, number, number],
   /** Drawn after the terrain and break-up clouds, before the veil (3). */
   renderOrder: 2.5,
 };
@@ -35,15 +37,31 @@ const fragmentShader = /* glsl */ `
   #include <logdepthbuf_pars_fragment>
   uniform sampler2D uMap;
   uniform vec3 uHaze;
+  uniform vec3 uHorizon;
+  uniform vec3 uSkyKey;
   uniform float uOpacity;
   varying vec2 vUv;
+
+  // 1 where the photo shows its own sky: close to the sky colour, or bright and blue-leaning,
+  // and only in the upper part. Hills are dark and the spire is warm (blue below red): both stay.
+  float skyKey(vec3 s) {
+    float lum = dot(s, vec3(0.299, 0.587, 0.114));
+    float near = 1.0 - smoothstep(0.10, 0.22, distance(s, uSkyKey));
+    float bright = smoothstep(0.50, 0.62, lum) * smoothstep(0.0, 0.05, s.b - s.r);
+    return max(near, bright) * smoothstep(0.35, 0.50, vUv.y);
+  }
+
   void main() {
     #include <logdepthbuf_fragment>
-    vec3 col = texture2D(uMap, vUv).rgb;
+    // The map is sampled raw (sRGB) so the key works on the photo's own values.
+    vec3 s = texture2D(uMap, vUv).rgb;
+    vec3 col = sRGBTransferEOTF(vec4(s, 1.0)).rgb;
     float mask = smoothstep(0.0, 0.16, vUv.x) * smoothstep(1.0, 0.66, vUv.x)
       * smoothstep(0.02, 0.30, vUv.y) * smoothstep(1.0, 0.80, vUv.y);
     col = mix(col, uHaze, mix(0.18, 0.0, clamp(vUv.y / 0.8, 0.0, 1.0)));
-    gl_FragColor = vec4(col, mask * uOpacity);
+    // Toward the edges what remains melts into our horizon colour.
+    col = mix(col, uHorizon, (1.0 - mask) * 0.5);
+    gl_FragColor = vec4(col, mask * (1.0 - skyKey(s)) * uOpacity);
     #include <colorspace_fragment>
   }
 `;
@@ -57,12 +75,15 @@ function faceYaw(center: Vector3Tuple, pos: Vector3Tuple): number {
 
 export function createVision(stage: Pick<Stage, 'scene'> & Partial<Pick<Stage, 'renderer'>>, url: string): Vision {
   const map = new THREE.TextureLoader().load(url);
-  map.colorSpace = THREE.SRGBColorSpace;
+  // Raw sRGB values: the shader keys the sky on them and decodes to linear itself.
+  map.colorSpace = THREE.NoColorSpace;
   map.anisotropy = stage.renderer?.capabilities.getMaxAnisotropy() ?? 1;
 
   const uniforms = {
     uMap: { value: map as THREE.Texture },
     uHaze: { value: new THREE.Color(VISION.haze) },
+    uHorizon: { value: new THREE.Color(CONFIG.colors.skyHorizon) },
+    uSkyKey: { value: new THREE.Vector3(...VISION.skyKey) },
     uOpacity: { value: 0 },
   };
   const material = new THREE.ShaderMaterial({

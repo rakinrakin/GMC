@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { CONFIG } from '../../src/config';
 import { toThree } from '../../src/math/coords';
 import { createControls, type Controls } from '../../src/interact/controls';
+import { createScroll } from '../../src/story/scroll';
 import type { Stage } from '../../src/scene/stage';
 
 const MAP = CONFIG.timeline[CONFIG.timeline.length - 1];
@@ -102,10 +103,20 @@ describe('createControls', () => {
     expect(controls.state().distance).toBe(CONFIG.limits.distance[1]);
     wheelOn(canvas, -100);
     expect(controls.consumedLastWheel()).toBe(false);
-    // ctrl + wheel (trackpad pinch) zooms the same way, never the page.
-    const p = wheelOn(canvas, 30, true);
+  });
+
+  it('trackpad pinch (ctrl + wheel) is natural: spreading (deltaY < 0) zooms in; always consumed', () => {
+    const { canvas, controls } = setup();
+    controls.enabled = true;
+    const d0 = controls.state().distance;
+    const p = wheelOn(canvas, -30, true);
     expect(p.defaultPrevented).toBe(true);
-    expect(controls.state().distance).toBeLessThan(CONFIG.limits.distance[1]);
+    expect(controls.state().distance).toBeLessThan(d0);
+    for (let i = 0; i < 50; i++) wheelOn(canvas, 100, true);
+    expect(controls.state().distance).toBe(CONFIG.limits.distance[1]);
+    // Pinch-close at the limit still belongs to the map: never unpins.
+    wheelOn(canvas, 30, true);
+    expect(controls.consumedLastWheel()).toBe(true);
   });
 
   it('wheel while locked (zone selected) never zooms and the rest of that gesture is swallowed', () => {
@@ -117,7 +128,8 @@ describe('createControls', () => {
     const d0 = controls.state().distance;
     wheelOn(canvas, -100);
     expect(controls.state().distance).toBe(d0);
-    expect(controls.consumedLastWheel()).toBe(true);
+    // Not the map's: the scroll controller deselects with it.
+    expect(controls.consumedLastWheel()).toBe(false);
     locked = false;
     t += 50;
     wheelOn(canvas, -100);
@@ -151,5 +163,53 @@ describe('createControls', () => {
     expect(controls.state().azimuth).toBe(az);
     for (let i = 0; i < 400; i++) controls.update(16);
     expect(Math.abs(controls.state().azimuth)).toBeLessThan(1e-3);
+  });
+
+  it('Fix 5: an upward wheel over the zone panel neither unpins nor deselects', () => {
+    let y = 0;
+    Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: 800 });
+    Object.defineProperty(window, 'scrollY', { configurable: true, get: () => y });
+    window.scrollTo = ((a: number | ScrollToOptions, b?: number) => {
+      y = typeof a === 'number' ? (b ?? 0) : (a.top ?? y);
+      window.dispatchEvent(new Event('scroll'));
+    }) as typeof window.scrollTo;
+    let selected = 0;
+    const { canvas, controls } = setup({ locked: () => selected !== 0 });
+    const ui = document.createElement('div');
+    ui.className = 'map-ui';
+    const panel = document.createElement('section');
+    ui.appendChild(panel);
+    document.body.appendChild(ui);
+    const track = document.createElement('div');
+    document.body.appendChild(track);
+    const selection = { deselect: vi.fn(() => { selected = 0; }), current: () => selected };
+    let clock = 0;
+    const scroll = createScroll({
+      trackEl: track, selection, onT: () => {}, onLeaveEnd: () => { controls.enabled = false; },
+      onEnd: () => { controls.enabled = true; }, now: () => clock, initialT: 1,
+      acceptUpwardWheel: () => !controls.consumedLastWheel(),
+    });
+    expect(scroll.state()).toBe('pinned');
+    wheelOn(canvas, 300); // zoom in
+    expect(controls.state().distance).toBeLessThan(CONFIG.limits.distance[1]);
+
+    // Zoomed in, nothing selected: wheel up over the UI zooms out, never unpins.
+    clock += 1000;
+    wheelOn(panel, -40);
+    expect(scroll.state()).toBe('pinned');
+
+    // A zone selected: wheel over the panel is the panel's.
+    selected = 4;
+    clock += 1000;
+    wheelOn(panel, -40);
+    expect(selection.deselect).not.toHaveBeenCalled();
+    expect(scroll.state()).toBe('pinned');
+
+    // The same wheel on the map deselects (as before).
+    clock += 1000;
+    wheelOn(canvas, -40);
+    expect(selection.deselect).toHaveBeenCalledTimes(1);
+    expect(scroll.state()).toBe('pinned');
+    scroll.destroy();
   });
 });

@@ -15,6 +15,11 @@ export function opacityCurves(t: number): { deck: number; breakup: number; capti
   return { deck, breakup, caption };
 }
 
+/** Caption to show: none while a zone is selected (the vision owns the sky), else the curve's. */
+export function captionFor(t: number, selected: boolean): CaptionId {
+  return selected ? 0 : opacityCurves(t).caption;
+}
+
 /** Frame-rate independent exponential approach (time constant tauMs); snaps within 1e-4. */
 export function approach(current: number, target: number, dtMs: number, tauMs: number): number {
   const next = target + (current - target) * Math.exp(-Math.max(0, dtMs) / tauMs);
@@ -39,8 +44,9 @@ export interface ScrollOptions {
   /** Scroll to this t on creation (dev ?t=); pins at once if it is the end. */
   initialT?: number;
   /**
-   * Asked on each upward wheel event while pinned with nothing selected. false means the map
-   * used it (zooming out); that whole gesture then never unpins. Absent: always accepted.
+   * Asked on each upward wheel event while pinned. false means the map used it (zooming out,
+   * a pinch, a wheel over the zone panel); that whole gesture then neither deselects nor
+   * unpins. Absent: always accepted.
    */
   acceptUpwardWheel?: () => boolean;
 }
@@ -147,7 +153,7 @@ export function createScroll(opts: ScrollOptions): Scroll {
       wheelGesture.last = now();
       return;
     }
-    if (selection.current() === 0 && opts.acceptUpwardWheel && !opts.acceptUpwardWheel()) {
+    if (opts.acceptUpwardWheel && !opts.acceptUpwardWheel()) {
       // The map consumed it: the rest of this gesture (momentum) belongs to the map too.
       wheelGesture.last = now();
       wheelGesture.used = true;

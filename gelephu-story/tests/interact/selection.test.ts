@@ -147,4 +147,52 @@ describe('createSelection', () => {
     step(2);
     expect(camera.position.toArray()).toEqual(toThree(MAP.pos));
   });
+
+  it('sync() applies effects and the camera after a late terrain / camera hand-back', () => {
+    const camera = new THREE.PerspectiveCamera(MAP.fov);
+    camera.position.set(...toThree(MAP.pos));
+    let uniforms: TerrainUniforms | null = null;
+    let allowed = false;
+    const sel = createSelection({
+      camera, zones: CONFIG.zones, centroids, mapView: { pos: MAP.pos, target: MAP.target, fov: MAP.fov },
+      uniforms: () => uniforms, vision: () => null, veil: { place: vi.fn(), setOpacity: vi.fn() },
+      cameraAllowed: () => allowed, duration: 1.6,
+    });
+    sel.select(1);
+    step(2);
+    expect(sel.busy()).toBe(false);
+    uniforms = {
+      uHover: { value: 0 }, uSelected: { value: 0 }, uFocus: { value: 0 }, uFocusCenter: { value: new THREE.Vector2() },
+    };
+    allowed = true;
+    sel.sync();
+    expect(uniforms.uSelected.value).toBe(1);
+    expect(uniforms.uFocus.value).toBeCloseTo(1, 5);
+    expect(uniforms.uFocusCenter.value.x).toBeCloseTo(9.181, 3);
+    expect(uniforms.uFocusCenter.value.y).toBeCloseTo(7.768, 3);
+    const [px, py, pz] = toThree(CONFIG.zones[0].view.pos);
+    expect(camera.position.toArray().map((v) => +v.toFixed(3))).toEqual([px, py, pz]);
+    expect(camera.fov).toBeCloseTo(33.2, 3);
+  });
+
+  it('sync() while idle on the map leaves the camera to the orbit controls', () => {
+    const { sel, camera } = setup();
+    camera.position.set(1, 2, 3);
+    sel.sync();
+    expect(camera.position.toArray()).toEqual([1, 2, 3]);
+  });
+
+  it('onChange reports select and deselect (caption hide/restore hook)', () => {
+    const onChange = vi.fn();
+    const camera = new THREE.PerspectiveCamera(MAP.fov);
+    const sel = createSelection({
+      camera, zones: CONFIG.zones, centroids, mapView: { pos: MAP.pos, target: MAP.target, fov: MAP.fov },
+      uniforms: () => null, vision: () => null, veil: { place: vi.fn(), setOpacity: vi.fn() }, onChange,
+    });
+    sel.select(1);
+    expect(onChange).toHaveBeenLastCalledWith(1);
+    sel.deselect();
+    expect(onChange).toHaveBeenLastCalledWith(0);
+    step(2);
+  });
 });

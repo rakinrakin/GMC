@@ -44,6 +44,8 @@ describe('createVision', () => {
     expect(m.fragmentShader).toContain('smoothstep(1.0, 0.66, vUv.x)');
     expect(m.fragmentShader).toContain('smoothstep(0.02, 0.30, vUv.y)');
     expect(m.fragmentShader).toContain('smoothstep(1.0, 0.80, vUv.y)');
+    expect(m.fragmentShader).toContain('skyKey(s)');
+    expect(m.uniforms.uMap.value.colorSpace).toBe(THREE.NoColorSpace);
     expect(m.transparent).toBe(true);
     expect(m.depthWrite).toBe(false);
   });

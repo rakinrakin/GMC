@@ -18,6 +18,11 @@ export interface Selection {
   current(): number;
   /** True while a select/deselect transition is running. */
   busy(): boolean;
+  /**
+   * Re-applies the current effects (and the camera, if a zone is selected or easing and camera
+   * writes are allowed). Call when the terrain arrives late or the camera is handed back.
+   */
+  sync(): void;
 }
 
 export interface SelectionDeps {
@@ -36,6 +41,8 @@ export interface SelectionDeps {
   cameraAllowed?: () => boolean;
   /** Transition length in seconds (1.6). */
   duration?: number;
+  /** Called with the new current() whenever a select or deselect starts. */
+  onChange?(id: number): void;
 }
 
 const ZONE_FOV = 33.2;
@@ -147,6 +154,7 @@ export function createSelection(deps: SelectionDeps): Selection {
       if (zone.image) deps.veil.place(veil);
       applyFx();
       deps.panel?.open(zone);
+      deps.onChange?.(id);
       run(zoneView(zone, centroid, deps.mapView), { focus: 1, vision: zone.image ? 1 : 0, cx, cy });
     },
     deselect() {
@@ -154,11 +162,17 @@ export function createSelection(deps: SelectionDeps): Selection {
       startFrom();
       currentId = 0;
       deps.panel?.close();
+      deps.onChange?.(0);
       run(deps.mapView, { focus: 0, vision: 0 }, () => {
         shownId = 0;
       });
     },
     current: () => currentId,
     busy: isBusy,
+    sync() {
+      applyFx();
+      // Idle on the map the pose proxy is stale: the orbit controls own the camera then.
+      if (currentId !== 0 || isBusy()) applyCamera();
+    },
   };
 }
