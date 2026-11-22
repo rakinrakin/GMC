@@ -167,6 +167,36 @@ describe('createScroll', () => {
     scroll.destroy();
   });
 
+  it('acceptUpwardWheel=false (map still zooming out) holds the pin for that whole gesture', () => {
+    const win = mockWindow(800);
+    let accept = false;
+    let current = 0;
+    const selection = { deselect: vi.fn(() => { current = 0; }), current: () => current };
+    const scroll = make({ trackEl, onT: vi.fn(), onEnd: vi.fn(), onLeaveEnd: vi.fn(), selection, now,
+      acceptUpwardWheel: () => accept });
+    win.userScroll(800 * CONFIG.scrollVh - 800);
+    wheel(-40);
+    expect(scroll.state()).toBe('pinned');
+    // Zoom reaches the limit mid-gesture: momentum of the same gesture must not unpin.
+    accept = true;
+    clock += 50;
+    wheel(-40);
+    expect(scroll.state()).toBe('pinned');
+    // A selected zone still deselects first, regardless of the predicate.
+    clock += 1000;
+    current = 3;
+    accept = false;
+    wheel(-40);
+    expect(selection.deselect).toHaveBeenCalledTimes(1);
+    expect(scroll.state()).toBe('pinned');
+    // A new gesture at the zoom limit unpins.
+    clock += 1000;
+    accept = true;
+    wheel(-40);
+    expect(scroll.state()).toBe('scrolling');
+    scroll.destroy();
+  });
+
   it('onEnd re-arms after unpinning', () => {
     const { win, scroll, max, onEnd } = setup(0);
     win.userScroll(max);

@@ -38,6 +38,11 @@ export interface ScrollOptions {
   now?: () => number;
   /** Scroll to this t on creation (dev ?t=); pins at once if it is the end. */
   initialT?: number;
+  /**
+   * Asked on each upward wheel event while pinned with nothing selected. false means the map
+   * used it (zooming out); that whole gesture then never unpins. Absent: always accepted.
+   */
+  acceptUpwardWheel?: () => boolean;
 }
 
 export interface Scroll {
@@ -140,6 +145,12 @@ export function createScroll(opts: ScrollOptions): Scroll {
     if (state !== 'pinned') return;
     if (e.deltaY >= 0) {
       wheelGesture.last = now();
+      return;
+    }
+    if (selection.current() === 0 && opts.acceptUpwardWheel && !opts.acceptUpwardWheel()) {
+      // The map consumed it: the rest of this gesture (momentum) belongs to the map too.
+      wheelGesture.last = now();
+      wheelGesture.used = true;
       return;
     }
     if (claimGesture(wheelGesture)) upwardGesture();
