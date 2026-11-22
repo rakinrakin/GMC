@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as THREE from 'three';
 import { CONFIG } from '../../src/config';
 import { toThree } from '../../src/math/coords';
-import { createClouds, FOREGROUND_CARDS, atlasLayout } from '../../src/scene/clouds';
+import { createClouds, FOREGROUND_CARDS, atlasLayout, GMC_GAP, inGmcGap } from '../../src/scene/clouds';
 import type { Stage } from '../../src/scene/stage';
 
 const loaded: string[] = [];
@@ -128,6 +128,33 @@ describe('createClouds', () => {
       expect(Math.abs(p.x + 4)).toBeGreaterThanOrEqual(9);
       expect(Math.abs(p.x + 4)).toBeLessThanOrEqual(16);
     }
+  });
+
+  it('keeps the main break-up field out of the ellipse over GMC, still 150 + 10 cards', () => {
+    for (const tier of ['desktop', 'mobile'] as const) {
+      const { sets } = createClouds(fakeStage(tier));
+      const m = mesh(sets.breakup.group);
+      const cs = cards(m);
+      const ps = positions(m);
+      const main = ps.filter((_, i) => Math.abs(cs[i][1] - 0.95) > 1e-6);
+      const s = tier === 'mobile' ? CONFIG.mobileCloudScale : 1;
+      expect(main).toHaveLength(Math.round(CONFIG.clouds.breakup * s));
+      for (const p of main) {
+        const bx = p.x, by = -p.z; // three -> Blender
+        const k = ((bx - GMC_GAP.center[0]) / GMC_GAP.semiAxes[0]) ** 2 + ((by - GMC_GAP.center[1]) / GMC_GAP.semiAxes[1]) ** 2;
+        expect(k).toBeGreaterThan(1);
+      }
+    }
+  });
+
+  it('rejects cards whose disc reaches more than 30% of W into the gap', () => {
+    const [cx, cy] = GMC_GAP.center;
+    const top = cy + GMC_GAP.semiAxes[1];
+    // 2 km above the top of the ellipse: W=10 reaches 3 km in (30%) -> allowed; W=20 reaches 8 km -> rejected.
+    expect(inGmcGap(cx, top + 2, 10)).toBe(false);
+    expect(inGmcGap(cx, top + 2, 20)).toBe(true);
+    expect(inGmcGap(cx, cy, 1)).toBe(true);
+    expect(inGmcGap(cx, top + 30, 34)).toBe(false);
   });
 
   it('setOpacity drives the shared opacity uniform and the deck mist floor', () => {

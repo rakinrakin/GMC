@@ -23,6 +23,28 @@ const ATLAS_PAD = 8;
 const TOP_OPACITIES = [0.85, 1.0];
 const FOREGROUND_OPACITY = 0.95;
 
+/**
+ * Opening over GMC in the break-up field (Blender-style km). Main cards are re-drawn if their
+ * centre is inside, or if their disc (radius W/2) reaches more than maxOverlap * W into it.
+ */
+export const GMC_GAP = { center: [-2, -2] as [number, number], semiAxes: [42, 16] as [number, number], maxOverlap: 0.3 };
+const GAP_SAMPLES = 256;
+const GAP_BOUNDARY = Array.from({ length: GAP_SAMPLES }, (_, i) => {
+  const t = (i / GAP_SAMPLES) * Math.PI * 2;
+  return [GMC_GAP.center[0] + GMC_GAP.semiAxes[0] * Math.cos(t), GMC_GAP.center[1] + GMC_GAP.semiAxes[1] * Math.sin(t)];
+});
+
+/** True if a card at (x, y) with width w intrudes into the GMC gap beyond the allowed overlap. */
+export function inGmcGap(x: number, y: number, w: number): boolean {
+  const [cx, cy] = GMC_GAP.center;
+  const [a, b] = GMC_GAP.semiAxes;
+  if (((x - cx) / a) ** 2 + ((y - cy) / b) ** 2 <= 1) return true;
+  let d = Infinity;
+  for (const [ex, ey] of GAP_BOUNDARY) d = Math.min(d, Math.hypot(x - ex, y - ey));
+  // Depth the disc reaches past the boundary: w/2 - d.
+  return w / 2 - d > GMC_GAP.maxOverlap * w;
+}
+
 const RENDER_ORDER = { floor: 0.9, deck: 1, breakup: 2, veil: 3 };
 
 /** [x, y, z (Blender-style), width km]. */
@@ -400,10 +422,17 @@ function breakupCards(n: number, nFore: number, rnd: () => number): Card[] {
   const u = (a: number, b: number) => a + rnd() * (b - a);
   const cards: Card[] = [];
   for (let i = 0; i < n; i++) {
+    // Re-draw (seeded, so still deterministic) until the card stays out of the GMC gap.
+    let x: number, y: number, w: number;
+    do {
+      x = u(-110, 100);
+      y = u(-65, 90);
+      w = u(14, 34);
+    } while (inGmcGap(x, y, w));
     cards.push({
       letter: letters[i],
-      pos: [u(-110, 100), u(-65, 90), u(11.5, 15.5)],
-      width: u(14, 34),
+      pos: [x, y, u(11.5, 15.5)],
+      width: w,
       yaw: rnd() * Math.PI * 2,
       opacity: TOP_OPACITIES[Math.floor(rnd() * TOP_OPACITIES.length)],
     });
