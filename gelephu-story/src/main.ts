@@ -19,6 +19,7 @@ import { createScroll, opacityCurves, approach, captionFor } from './story/scrol
 import { createOverlays } from './story/overlays';
 import { createLoader } from './ui/loader';
 import { webglAvailable, showFallback } from './ui/fallback';
+import { watchContextLoss } from './ui/contextLoss';
 
 /** Time constant of the camera easing toward the scroll position. */
 const SCROLL_SMOOTH_MS = 140;
@@ -214,7 +215,11 @@ function start(app: HTMLElement) {
     onT: () => {},
     onEnd: () => {
       overlays.setPinned(true);
-      leave = null;
+      // Re-pinned mid-blend: continue from the pose on screen (blending to the map) instead of snapping.
+      if (leave) {
+        const cam = stage.camera;
+        leave = { pos: cam.position.clone(), quat: cam.quaternion.clone(), fov: cam.fov, k: 0 };
+      }
       setLive(true);
     },
     onLeaveEnd: () => {
@@ -278,12 +283,19 @@ function start(app: HTMLElement) {
     })
     .catch((err) => {
       console.error('Terrain failed to load', err);
-      stage.renderer.setAnimationLoop(null);
-      loader.done();
-      scroll.destroy();
-      app.remove();
-      showFallback(document.body);
+      giveUp();
     });
+
+  /** Tear the 3D scene down for the static page (idempotent: showFallback reuses an existing one). */
+  function giveUp() {
+    stage.renderer.setAnimationLoop(null);
+    loader.done();
+    scroll.destroy();
+    app.remove();
+    showFallback(document.body);
+  }
+  // A lost WebGL context gets a few seconds to come back before the static page takes over.
+  watchContextLoss(canvas, giveUp);
 
   let last = performance.now();
   stage.renderer.setAnimationLoop((now: number) => {
