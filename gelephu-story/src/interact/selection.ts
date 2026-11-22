@@ -23,6 +23,8 @@ export interface Selection {
    * writes are allowed). Call when the terrain arrives late or the camera is handed back.
    */
   sync(): void;
+  /** After a resize: re-fit the view of a settled selected zone (no-op while easing or idle). */
+  reframe(): void;
 }
 
 export interface SelectionDeps {
@@ -41,6 +43,8 @@ export interface SelectionDeps {
   cameraAllowed?: () => boolean;
   /** Transition length in seconds (1.6). */
   duration?: number;
+  /** Aspect-aware framing applied to every view before it is tweened to (default: identity). */
+  fit?: (v: View) => View;
   /** Called with the new current() whenever a select or deselect starts. */
   onChange?(id: number): void;
 }
@@ -72,6 +76,7 @@ export function createSelection(deps: SelectionDeps): Selection {
   const { camera } = deps;
   const duration = deps.duration ?? 1.6;
   const cameraAllowed = deps.cameraAllowed ?? (() => true);
+  const fit = deps.fit ?? ((v: View) => v);
   const veil = veilCards();
 
   // Tweened proxies, in three.js coordinates.
@@ -120,7 +125,8 @@ export function createSelection(deps: SelectionDeps): Selection {
     }
   }
 
-  function poseOf(v: View) {
+  function poseOf(view: View) {
+    const v = fit(view);
     const [px, py, pz] = toThree(v.pos);
     const [tx, ty, tz] = toThree(v.target);
     return { px, py, pz, tx, ty, tz, fov: v.fov };
@@ -169,6 +175,13 @@ export function createSelection(deps: SelectionDeps): Selection {
     },
     current: () => currentId,
     busy: isBusy,
+    reframe() {
+      if (currentId === 0 || isBusy()) return;
+      const zone = deps.zones.find((z) => z.id === currentId);
+      if (!zone) return;
+      Object.assign(pose, poseOf(zoneView(zone, deps.centroids[currentId], deps.mapView)));
+      applyCamera();
+    },
     sync() {
       applyFx();
       // Idle on the map the pose proxy is stale: the orbit controls own the camera then.

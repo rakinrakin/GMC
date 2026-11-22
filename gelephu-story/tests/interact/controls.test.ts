@@ -213,3 +213,22 @@ describe('createControls', () => {
     scroll.destroy();
   });
 });
+
+describe('controls framing (portrait)', () => {
+  it('writes the framing fov and scales the camera distance; orbit state and limits stay in 16:9 units', () => {
+    const canvas = document.createElement('canvas');
+    document.body.appendChild(canvas);
+    const camera = new THREE.PerspectiveCamera(MAP.fov, 0.46);
+    const stage = { camera, renderer: { domElement: canvas } } as unknown as Stage;
+    const controls = createControls(stage, CONFIG.limits, {
+      target: MAP.target, startPos: MAP.pos, fov: MAP.fov, framing: () => ({ fov: 70, distanceScale: 2 }),
+    });
+    live.push(controls);
+    controls.enabled = true;
+    controls.update(16);
+    expect(camera.fov).toBe(70);
+    const d = camera.position.distanceTo(new THREE.Vector3(...toThree(MAP.target)));
+    expect(d).toBeCloseTo(2 * Math.hypot(94, 125), 3);
+    expect(controls.state().distance).toBeCloseTo(Math.hypot(94, 125), 3);
+  });
+});

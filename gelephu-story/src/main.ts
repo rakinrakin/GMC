@@ -1,6 +1,7 @@
 import { CONFIG } from './config';
-import { toThree } from './math/coords';
+import { toThree, type Vector3Tuple } from './math/coords';
 import { sampleTimeline } from './math/timeline';
+import { fitView, fitTimelineView, framingFor } from './math/framing';
 import { createStage } from './scene/stage';
 import { createSky } from './scene/sky';
 import { createClouds } from './scene/clouds';
@@ -83,6 +84,14 @@ function start(app: HTMLElement) {
 
   const MAP = CONFIG.timeline[CONFIG.timeline.length - 1];
   const mapView = { pos: MAP.pos, target: MAP.target, fov: MAP.fov };
+  /**
+   * Views are authored for 16:9. Narrower screens (portrait phones) keep the 16:9 horizontal
+   * coverage: a wider vertical fov, then a pull-back once it reaches the cap.
+   */
+  const fit = <V extends { pos: Vector3Tuple; target: Vector3Tuple; fov: number }>(v: V): V => {
+    const f = fitView(v.pos, v.target, v.fov, stage.camera.aspect);
+    return { ...v, pos: f.pos, fov: f.fov };
+  };
   const centroids: Record<number, [number, number]> = {};
   for (const z of zonesJson as unknown as Array<{ id: number; centroidKm: [number, number] }>) centroids[z.id] = z.centroidKm;
   const zoneName = (id: number) => CONFIG.zones.find((z) => z.id === id)?.name ?? '';
@@ -116,6 +125,7 @@ function start(app: HTMLElement) {
     // The scroll timeline owns the camera until it has settled on the map key.
     cameraAllowed: () => live && shownT === 1,
     duration: reducedMotion ? 0.6 : 1.6,
+    fit,
     // The map caption gives the sky to the vision while a zone is selected; so does the footer note.
     onChange: (id) => {
       overlays.setCaption(captionFor(shownT, id !== 0));
@@ -150,6 +160,8 @@ function start(app: HTMLElement) {
     target: MAP.target,
     startPos: MAP.pos,
     fov: MAP.fov,
+    // Same framing as the map key view; orbit distances and limits scale with it.
+    framing: () => framingFor(MAP.fov, stage.camera.aspect),
     locked: () => selection.current() !== 0 || selection.busy(),
     onTap: (x, y) => {
       const id = pickAt(x, y);
@@ -221,7 +233,7 @@ function start(app: HTMLElement) {
   // It starts at the current scroll position (incl. ?t= or scroll restoration), with no ease-up from 0.
   let shownT = scroll.t();
   const applyT = (t: number) => {
-    const key = sampleTimeline(CONFIG.timeline, t);
+    const key = fitTimelineView(sampleTimeline(CONFIG.timeline, t), t, stage.camera.aspect);
     const cam = stage.camera;
     cam.position.set(...toThree(key.pos));
     cam.lookAt(...toThree(key.target));
@@ -242,6 +254,16 @@ function start(app: HTMLElement) {
     overlays.setCaption(captionFor(t, selection.current() !== 0));
   };
   applyT(shownT);
+
+  // Rotation / resize: the timeline position is kept (scroll.ts); the framing is recomputed.
+  stage.onResize(() => {
+    if (live && shownT === 1 && !leave) {
+      // The map owns the camera: the controls re-frame every frame; a settled zone view needs a nudge.
+      selection.reframe();
+    } else {
+      applyT(shownT);
+    }
+  });
 
   loadTerrain(stage, (f) => {
     terrainF = f;

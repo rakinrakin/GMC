@@ -4,6 +4,7 @@ import { gsap } from 'gsap';
 import { CONFIG } from '../../src/config';
 import { toThree } from '../../src/math/coords';
 import { createSelection, zoneView } from '../../src/interact/selection';
+import { fitView } from '../../src/math/framing';
 import type { TerrainUniforms } from '../../src/scene/terrain';
 
 // Drive gsap by hand: remove the rAF ticker and step the root timeline explicitly.
@@ -194,5 +195,30 @@ describe('createSelection', () => {
     sel.deselect();
     expect(onChange).toHaveBeenLastCalledWith(0);
     step(2);
+  });
+});
+
+describe('selection framing (portrait)', () => {
+  it('tweens to the fitted zone view and reframe() re-fits after a resize', () => {
+    const camera = new THREE.PerspectiveCamera(MAP.fov);
+    let aspect = 375 / 812;
+    const fit = (v: { pos: [number, number, number]; target: [number, number, number]; fov: number }) => {
+      const f = fitView(v.pos, v.target, v.fov, aspect);
+      return { ...v, pos: f.pos, fov: f.fov };
+    };
+    const sel = createSelection({
+      camera, zones: CONFIG.zones, centroids, mapView: { pos: MAP.pos, target: MAP.target, fov: MAP.fov },
+      uniforms: () => null, vision: () => null, veil: { place: () => {}, setOpacity: () => {} }, duration: 1.6, fit,
+    });
+    sel.select(1);
+    step(2);
+    const want = fit(zoneView(CONFIG.zones[0], centroids[1], MAP));
+    expect(camera.fov).toBeCloseTo(want.fov, 3);
+    expect(camera.position.x).toBeCloseTo(toThree(want.pos)[0], 3);
+    expect(camera.position.z).toBeCloseTo(toThree(want.pos)[2], 3);
+    aspect = 16 / 9;
+    sel.reframe();
+    expect(camera.fov).toBeCloseTo(33.2, 3);
+    expect(camera.position.z).toBeCloseTo(toThree(CONFIG.zones[0].view.pos)[2], 3);
   });
 });

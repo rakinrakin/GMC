@@ -3,6 +3,7 @@ import type { Limits } from '../config';
 import { toThree, type Vector3Tuple } from '../math/coords';
 import { clampOrbit, springTowards } from '../math/orbit';
 import type { Stage } from '../scene/stage';
+import type { Framing } from '../math/framing';
 
 export interface OrbitState {
   /** Radians around the start view (0 = start). */
@@ -19,6 +20,11 @@ export interface ControlsOptions {
   startPos: Vector3Tuple;
   /** Field of view written while the controls own the camera. */
   fov: number;
+  /**
+   * Aspect-aware framing: the fov written and a multiplier on the camera distance. Orbit state
+   * and the distance limits stay in 16:9 units, so the limits scale with it. Default: none.
+   */
+  framing?: () => Framing;
   /** True while something else (the zone selection) owns the camera: no orbit or zoom. */
   locked?: () => boolean;
   /** A press and release without a drag (mouse click or touch tap). */
@@ -225,10 +231,11 @@ export function createControls(stage: Pick<Stage, 'camera' | 'renderer'>, limits
           distance: springTowards(s.distance, startState.distance, dtMs, SPRING_HALF_LIFE_MS),
         };
       }
-      sph.set(s.distance, s.polar, start.theta + s.azimuth);
+      const f = opts.framing?.() ?? { fov: opts.fov, distanceScale: 1 };
+      sph.set(s.distance * f.distanceScale, s.polar, start.theta + s.azimuth);
       camera.position.copy(tmp.setFromSpherical(sph).add(target));
-      if (camera.fov !== opts.fov) {
-        camera.fov = opts.fov;
+      if (camera.fov !== f.fov) {
+        camera.fov = f.fov;
         camera.updateProjectionMatrix();
       }
       camera.lookAt(target);
