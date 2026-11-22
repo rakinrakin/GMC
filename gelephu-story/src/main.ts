@@ -18,9 +18,9 @@ if (app) {
 
   // Dev only: ?t=<0..1> holds the camera at that point of the timeline (default: the map key) with
   // stepped cloud opacities, for comparing against the approved frames. Task 6 replaces this.
-  const tParam = import.meta.env.DEV ? Number(new URLSearchParams(location.search).get('t')) : NaN;
-  const t = Number.isFinite(tParam) && new URLSearchParams(location.search).has('t')
-    ? Math.min(1, Math.max(0, tParam)) : 1;
+  const tRaw = import.meta.env.DEV ? new URLSearchParams(location.search).get('t') : null;
+  const tParam = tRaw === null || tRaw === '' ? NaN : Number(tRaw);
+  const t = Number.isFinite(tParam) ? Math.min(1, Math.max(0, tParam)) : 1;
   clouds.sets.deck.setOpacity(t < 0.3 ? 1 : 0);
   clouds.sets.breakup.setOpacity(t >= 0.3 && t < 0.75 ? 1 : 0);
   const key = sampleTimeline(CONFIG.timeline, t);

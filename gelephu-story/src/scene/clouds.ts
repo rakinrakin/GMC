@@ -3,7 +3,7 @@ import { CONFIG } from '../config';
 import { toThree, type Vector3Tuple } from '../math/coords';
 import type { Stage } from './stage';
 
-/** Extra break-up cards placed just in front of the F2 camera. */
+/** Extra break-up cards framing the F2 view (reference layout). */
 export const FOREGROUND_CARDS = 10;
 
 const LETTERS = ['a', 'b', 'c', 'd', 'e'] as const;
@@ -17,6 +17,11 @@ const FLOOR_COLOR = '#B3BAC7';
 const FLOOR_SIZE = 3000;
 const NEAR_FADE: [number, number] = [2, 8];
 const DRIFT_SPEED = 0.03;
+/** Transparent rows between atlas slots so mips and filtering never bleed across textures. */
+const ATLAS_PAD = 8;
+/** Main top-card opacities and the foreground card opacity, from the reference layout. */
+const TOP_OPACITIES = [0.85, 1.0];
+const FOREGROUND_OPACITY = 0.95;
 
 const RENDER_ORDER = { floor: 0.9, deck: 1, breakup: 2, veil: 3 };
 
@@ -89,15 +94,171 @@ export function createNoiseTexture(seed = 1, size = 256): THREE.DataTexture {
   return tex;
 }
 
+export interface AtlasLayout {
+  width: number;
+  height: number;
+  /** Per texture, in pixels: [x, top row, width, height]. */
+  slots: Array<[number, number, number, number]>;
+  /** Per texture, normalised: [u0, v0 (top row, row 0 = v 0), du, dv]. */
+  rects: Array<[number, number, number, number]>;
+  /** Per texture: width / height. */
+  aspects: number[];
+}
+
+/** Textures stacked vertically, left-aligned, with pad rows between them. */
+export function atlasLayout(sizes: Array<{ width: number; height: number }>, pad = ATLAS_PAD): AtlasLayout {
+  const width = Math.max(...sizes.map((s) => s.width));
+  const slots: AtlasLayout['slots'] = [];
+  let y = 0;
+  sizes.forEach((s, i) => {
+    slots.push([0, y, s.width, s.height]);
+    y += s.height + (i < sizes.length - 1 ? pad : 0);
+  });
+  const height = y;
+  return {
+    width,
+    height,
+    slots,
+    rects: slots.map(([x, top, w, h]) => [x / width, top / height, w / width, h / height]),
+    aspects: sizes.map((s) => s.width / s.height),
+  };
+}
+
+/**
+ * Builds a straight-alpha RGBA atlas. Canvas readback loses colour where alpha is ~0, so those
+ * texels are refilled from their neighbours (a few dilation passes) and then with the mean cloud
+ * colour. Bilinear filtering and mips then blend toward light cloud colour, never toward black.
+ */
+function buildAtlasTexture(images: CanvasImageSource[], layout: AtlasLayout): THREE.Texture {
+  const { width, height } = layout;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+  layout.slots.forEach(([x, y], i) => ctx.drawImage(images[i], x, y));
+  const px = ctx.getImageData(0, 0, width, height).data;
+
+  const EMPTY = 8;
+  const filled = new Uint8Array(width * height);
+  let sr = 0, sg = 0, sb = 0, sn = 0;
+  for (let i = 0; i < width * height; i++) {
+    if (px[i * 4 + 3] >= EMPTY) {
+      filled[i] = 1;
+      if (px[i * 4 + 3] > 128) {
+        sr += px[i * 4]; sg += px[i * 4 + 1]; sb += px[i * 4 + 2]; sn++;
+      }
+    }
+  }
+  const next = new Uint8Array(filled);
+  for (let pass = 0; pass < 6; pass++) {
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const i = y * width + x;
+        if (filled[i]) continue;
+        let r = 0, g = 0, b = 0, n = 0;
+        const add = (j: number) => {
+          if (filled[j]) { r += px[j * 4]; g += px[j * 4 + 1]; b += px[j * 4 + 2]; n++; }
+        };
+        if (x > 0) add(i - 1);
+        if (x < width - 1) add(i + 1);
+        if (y > 0) add(i - width);
+        if (y < height - 1) add(i + width);
+        if (n) {
+          px[i * 4] = r / n; px[i * 4 + 1] = g / n; px[i * 4 + 2] = b / n;
+          next[i] = 1;
+        }
+      }
+    }
+    filled.set(next);
+  }
+  const mean = sn ? [sr / sn, sg / sn, sb / sn] : [220, 222, 226];
+  for (let i = 0; i < width * height; i++) {
+    if (!filled[i]) {
+      px[i * 4] = mean[0]; px[i * 4 + 1] = mean[1]; px[i * 4 + 2] = mean[2];
+    }
+  }
+
+  const tex = new THREE.DataTexture(new Uint8Array(px.buffer), width, height, THREE.RGBAFormat);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.premultiplyAlpha = false;
+  tex.flipY = false; // row 0 (image top) sits at v = 0; the shader flips
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.generateMipmaps = true;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+interface Atlas {
+  uMap: { value: THREE.Texture };
+  uRects: { value: THREE.Vector4[] };
+  uAspects: { value: number[] };
+  onReady(cb: () => void): void;
+}
+
+function loadAtlas(kind: 'side' | 'top', loader: THREE.TextureLoader, anisotropy: number): Atlas {
+  const placeholder = new THREE.DataTexture(new Uint8Array([0, 0, 0, 0]), 1, 1, THREE.RGBAFormat);
+  placeholder.premultiplyAlpha = false;
+  placeholder.needsUpdate = true;
+  const waiting: Array<() => void> = [];
+  let ready = false;
+  const atlas: Atlas = {
+    uMap: { value: placeholder },
+    uRects: { value: LETTERS.map(() => new THREE.Vector4(0, 0, 1, 1)) },
+    uAspects: { value: LETTERS.map(() => 2) },
+    onReady(cb) {
+      if (ready) cb();
+      else waiting.push(cb);
+    },
+  };
+  const texs: THREE.Texture[] = [];
+  let pending = LETTERS.length;
+  const finish = () => {
+    const images = texs.map((t) => t.image as CanvasImageSource & { width: number; height: number });
+    const layout = atlasLayout(images.map((im) => ({ width: im.width, height: im.height })));
+    layout.rects.forEach((r, i) => atlas.uRects.value[i].set(...r));
+    layout.aspects.forEach((a, i) => (atlas.uAspects.value[i] = a));
+    // No DOM (unit tests): keep the placeholder texture; layout and aspects are still real.
+    if (typeof document !== 'undefined') {
+      const tex = buildAtlasTexture(images, layout);
+      tex.anisotropy = anisotropy;
+      atlas.uMap.value = tex;
+    }
+    texs.forEach((t) => t.dispose());
+    ready = true;
+    waiting.splice(0).forEach((cb) => cb());
+  };
+  LETTERS.forEach((l, i) => {
+    const url = `assets/cloud_${l}_${kind}.webp`;
+    loader.load(
+      url,
+      (tex) => {
+        texs[i] = tex;
+        if (--pending === 0) finish();
+      },
+      undefined,
+      (err) => console.error(`Cloud texture failed: ${url}`, err),
+    );
+  });
+  return atlas;
+}
+
 const vertexShader = /* glsl */ `
   #include <common>
   #include <logdepthbuf_pars_vertex>
-  uniform float uTime;
+  uniform float uAspects[5];
+  attribute vec2 aCard; // x: texture index, y: card opacity
   varying vec2 vUv;
   varying vec2 vSeed;
   varying float vViewZ;
+  varying float vCardOpacity;
+  flat varying int vTex;
   void main() {
     vUv = uv;
+    int ti = int(aCard.x + 0.5);
+    vTex = ti;
+    vCardOpacity = aCard.y;
+    float h = 1.0 / uAspects[ti];
     vec4 center = modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
     vSeed = fract(center.xz * 0.0137);
     #ifdef BILLBOARD
@@ -107,9 +268,10 @@ const vertexShader = /* glsl */ `
       toCam.y = 0.0;
       vec3 f = length(toCam) > 1e-4 ? normalize(toCam) : vec3(0.0, 0.0, 1.0);
       vec3 right = vec3(f.z, 0.0, -f.x);
-      vec4 wp = vec4(center.xyz + right * position.x * w + vec3(0.0, 1.0, 0.0) * position.y * w, 1.0);
+      vec4 wp = vec4(center.xyz + right * position.x * w + vec3(0.0, position.y * h * w, 0.0), 1.0);
     #else
-      vec4 wp = modelMatrix * instanceMatrix * vec4(position, 1.0);
+      // Flat in local XZ; the card's image top points to local -Z (north before yaw).
+      vec4 wp = modelMatrix * instanceMatrix * vec4(position.x, 0.0, -position.y * h, 1.0);
     #endif
     vec4 mv = viewMatrix * wp;
     vViewZ = -mv.z;
@@ -122,32 +284,35 @@ const fragmentShader = /* glsl */ `
   #include <logdepthbuf_pars_fragment>
   uniform sampler2D uMap;
   uniform sampler2D uNoise;
+  uniform vec4 uRects[5];
   uniform float uTime;
   uniform float uOpacity;
   uniform vec2 uNearFade;
   varying vec2 vUv;
   varying vec2 vSeed;
   varying float vViewZ;
+  varying float vCardOpacity;
+  flat varying int vTex;
   void main() {
     #include <logdepthbuf_fragment>
     float s = uTime * ${DRIFT_SPEED.toFixed(3)};
     vec2 n1 = texture2D(uNoise, vUv * 0.9 + vSeed + vec2(s, s * 0.6)).rg;
     vec2 n2 = texture2D(uNoise, vUv * 2.3 + vSeed.yx - vec2(s * 0.7, s)).rg;
-    vec2 uv = vUv + (n1 - 0.5) * 0.006 + (n2 - 0.5) * 0.012;
-    // Map is premultiplied on upload so filtering does not fringe.
-    vec4 tex = texture2D(uMap, uv);
+    vec2 uv = clamp(vUv + (n1 - 0.5) * 0.006 + (n2 - 0.5) * 0.012, 0.0, 1.0);
+    vec4 r = uRects[vTex];
+    // Atlas row 0 is the image top, so card v = 1 maps to the slot's first row.
+    vec4 tex = texture2D(uMap, vec2(r.x + uv.x * r.z, r.y + (1.0 - uv.y) * r.w));
     float a0 = tex.a;
     float n = 0.5 * (n1.r + n2.g);
     // Alpha erosion on the soft parts only (dense cores untouched).
-    float a = a0 * (1.0 - (n - 0.5) * (1.0 - smoothstep(0.45, 1.0, a0)) * 4.0);
-    a = clamp(a, 0.0, 1.0);
+    float a = clamp(a0 * (1.0 - (n - 0.5) * (1.0 - smoothstep(0.45, 1.0, a0)) * 4.0), 0.0, 1.0);
     // Soft card border: hides any crop edge in the texture.
     vec2 e = smoothstep(vec2(0.0), vec2(0.06), vUv) * smoothstep(vec2(0.0), vec2(0.06), 1.0 - vUv);
     a *= e.x * e.y;
-    a *= smoothstep(uNearFade.x, uNearFade.y, vViewZ) * uOpacity;
+    a *= smoothstep(uNearFade.x, uNearFade.y, vViewZ) * uOpacity * vCardOpacity;
     if (a < 0.002) discard;
-    vec3 rgb = a0 > 1e-4 ? tex.rgb / a0 : vec3(1.0);
-    gl_FragColor = vec4(rgb, a);
+    // Straight-alpha colour; premultiplied once, after the output encode.
+    gl_FragColor = vec4(tex.rgb, a);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
     gl_FragColor.rgb *= gl_FragColor.a;
@@ -187,6 +352,7 @@ interface Card {
   pos: Vector3Tuple; // Blender-style
   width: number;
   yaw: number;
+  opacity: number;
 }
 
 function pickLetter(rnd: () => number, weights: Record<Letter, number>): Letter {
@@ -198,16 +364,16 @@ function pickLetter(rnd: () => number, weights: Record<Letter, number>): Letter 
   return LETTERS[LETTERS.length - 1];
 }
 
-/** Places cards by letter so each letter keeps close to its weight share (C top stays rare). */
+/** Picks letters by weight, capping each letter at its share (C top stays rare). */
 function assignLetters(n: number, rnd: () => number, weights: Record<Letter, number>): Letter[] {
   const out: Letter[] = [];
   const counts: Record<Letter, number> = { a: 0, b: 0, c: 0, d: 0, e: 0 };
+  const cap = (l: Letter) => Math.ceil(weights[l] * n);
   for (let i = 0; i < n; i++) {
     let l = pickLetter(rnd, weights);
-    // Never let a letter exceed its share by more than one card.
     let guard = 0;
-    while (counts[l] + 1 > Math.ceil(weights[l] * n) && guard++ < 10) l = pickLetter(rnd, weights);
-    if (counts[l] + 1 > Math.ceil(weights[l] * n)) {
+    while (counts[l] + 1 > cap(l) && guard++ < 10) l = pickLetter(rnd, weights);
+    if (counts[l] + 1 > cap(l)) {
       l = LETTERS.reduce((best, x) => (counts[x] / weights[x] < counts[best] / weights[best] ? x : best), 'a' as Letter);
     }
     counts[l]++;
@@ -219,50 +385,39 @@ function assignLetters(n: number, rnd: () => number, weights: Record<Letter, num
 function deckCards(n: number, rnd: () => number): Card[] {
   const cam = CONFIG.timeline[0].pos; // F1
   const letters = assignLetters(n, rnd, SIDE_WEIGHTS);
-  const cards: Card[] = [];
   const maxAngle = (62 * Math.PI) / 180;
-  for (let i = 0; i < n; i++) {
+  return letters.map((letter) => {
     const d = 8 + Math.pow(rnd(), 1.9) * 520;
     const ang = (rnd() * 2 - 1) * maxAngle;
     const w = (10 + rnd() * 10) * (0.45 + d / 220);
     const z = 11.3 + rnd() * 0.9 + 0.06 * w;
-    cards.push({
-      letter: letters[i],
-      pos: [cam[0] + d * Math.sin(ang), cam[1] + d * Math.cos(ang), z],
-      width: w,
-      yaw: 0,
-    });
-  }
-  return cards;
+    return { letter, pos: [cam[0] + d * Math.sin(ang), cam[1] + d * Math.cos(ang), z], width: w, yaw: 0, opacity: 1 };
+  });
 }
 
 function breakupCards(n: number, nFore: number, rnd: () => number): Card[] {
   const letters = assignLetters(n + nFore, rnd, TOP_WEIGHTS);
+  const u = (a: number, b: number) => a + rnd() * (b - a);
   const cards: Card[] = [];
   for (let i = 0; i < n; i++) {
     cards.push({
       letter: letters[i],
-      pos: [-110 + rnd() * 210, -65 + rnd() * 155, 11.5 + rnd() * 4],
-      width: 14 + rnd() * 20,
+      pos: [u(-110, 100), u(-65, 90), u(11.5, 15.5)],
+      width: u(14, 34),
       yaw: rnd() * Math.PI * 2,
+      opacity: TOP_OPACITIES[Math.floor(rnd() * TOP_OPACITIES.length)],
     });
   }
-  // Foreground: along the F2 view ray, 7-18 km out, so they pass close under the descending camera.
-  const f2 = CONFIG.timeline.find((k) => k.t === 0.45) ?? CONFIG.timeline[1];
-  const dir = f2.target.map((v, i) => v - f2.pos[i]);
-  const len = Math.hypot(dir[0], dir[1], dir[2]);
+  // Foreground, reference layout: either side of the F2 view (x = -4 +- 9..16), leaving the
+  // centre open so GMC shows through.
   for (let i = 0; i < nFore; i++) {
-    const s = 7 + rnd() * 11;
-    const lateral = (rnd() * 2 - 1) * 6;
+    const side = rnd() < 0.5 ? -1 : 1;
     cards.push({
       letter: letters[n + i],
-      pos: [
-        f2.pos[0] + (dir[0] / len) * s + lateral,
-        f2.pos[1] + (dir[1] / len) * s + (rnd() * 2 - 1) * 2,
-        f2.pos[2] + (dir[2] / len) * s - 1 - rnd() * 2,
-      ],
-      width: 8 + rnd() * 8,
+      pos: [-4 + side * u(9, 16), u(-55, -40), u(21, 25)],
+      width: u(10, 16),
       yaw: rnd() * Math.PI * 2,
+      opacity: FOREGROUND_OPACITY,
     });
   }
   return cards;
@@ -270,70 +425,49 @@ function breakupCards(n: number, nFore: number, rnd: () => number): Card[] {
 
 function buildSet(opts: {
   name: string;
-  kind: 'side' | 'top';
+  billboard: boolean;
   capacity: number;
   renderOrder: number;
+  atlas: Atlas;
   shared: { uTime: { value: number }; uNoise: { value: THREE.Texture } };
-  loader: THREE.TextureLoader;
-  anisotropy: number;
   /** Camera (Blender-style) the cards are sorted back-to-front against. */
   sortFrom: Vector3Tuple;
   rnd: () => number;
-}): CloudSet & { opacity: { value: number }; _write(cards: Card[]): void } {
+}): CloudSet & { opacity: { value: number }; write(cards: Card[]): void } {
   const group = new THREE.Group();
   group.name = `clouds_${opts.name}`;
   const opacity = { value: 1 };
-  const billboard = opts.kind === 'side';
-  const meshes = new Map<Letter, THREE.InstancedMesh>();
-  let count = 0;
+  const cap = Math.max(1, opts.capacity);
 
-  for (const l of LETTERS) {
-    const url = `assets/cloud_${l}_${opts.kind}.webp`;
-    const material = new THREE.ShaderMaterial({
-      uniforms: {
-        uMap: { value: null },
-        uNoise: opts.shared.uNoise,
-        uTime: opts.shared.uTime,
-        uOpacity: opacity,
-        uNearFade: { value: new THREE.Vector2(...NEAR_FADE) },
-      },
-      defines: billboard ? { BILLBOARD: '' } : {},
-      vertexShader,
-      fragmentShader,
-      transparent: true,
-      premultipliedAlpha: true,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-    const geometry = new THREE.PlaneGeometry(1, 0.5);
-    if (!billboard) geometry.rotateX(-Math.PI / 2); // lie flat in XZ
-    const mesh = new THREE.InstancedMesh(geometry, material, Math.max(1, opts.capacity));
-    mesh.name = `${opts.name}_cloud_${l}_${opts.kind}`;
-    mesh.count = 0;
-    mesh.renderOrder = opts.renderOrder + LETTERS.indexOf(l) * 0.01;
-    mesh.frustumCulled = false; // instances span the whole scene
-    mesh.visible = false; // until its texture arrives
-    meshes.set(l, mesh);
-    group.add(mesh);
-
-    const apply = (tex: THREE.Texture) => {
-      const img = tex.image as { width?: number; height?: number } | undefined;
-      const aspect = img?.width && img?.height ? img.width / img.height : 2;
-      const g = new THREE.PlaneGeometry(1, 1 / aspect);
-      if (!billboard) g.rotateX(-Math.PI / 2);
-      mesh.geometry.dispose();
-      mesh.geometry = g;
-      material.uniforms.uMap.value = tex;
-      mesh.visible = true;
-    };
-    opts.loader.load(url, (tex) => {
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.premultiplyAlpha = true;
-      tex.anisotropy = opts.anisotropy;
-      tex.needsUpdate = true;
-      apply(tex);
-    }, undefined, (err) => console.error(`Cloud texture failed: ${url}`, err));
-  }
+  const geometry = new THREE.PlaneGeometry(1, 1);
+  const aCard = new THREE.InstancedBufferAttribute(new Float32Array(cap * 2), 2);
+  geometry.setAttribute('aCard', aCard);
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      uMap: opts.atlas.uMap,
+      uRects: opts.atlas.uRects,
+      uAspects: opts.atlas.uAspects,
+      uNoise: opts.shared.uNoise,
+      uTime: opts.shared.uTime,
+      uOpacity: opacity,
+      uNearFade: { value: new THREE.Vector2(...NEAR_FADE) },
+    },
+    defines: opts.billboard ? { BILLBOARD: '' } : {},
+    vertexShader,
+    fragmentShader,
+    transparent: true,
+    premultipliedAlpha: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const mesh = new THREE.InstancedMesh(geometry, material, cap);
+  mesh.name = `clouds_${opts.name}_cards`;
+  mesh.count = 0;
+  mesh.renderOrder = opts.renderOrder;
+  mesh.frustumCulled = false; // instances span the whole scene
+  mesh.visible = false; // until the atlas arrives
+  opts.atlas.onReady(() => (mesh.visible = true));
+  group.add(mesh);
 
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
@@ -341,30 +475,32 @@ function buildSet(opts: {
   const p = new THREE.Vector3();
   const sc = new THREE.Vector3();
   const sortFrom = new THREE.Vector3(...toThree(opts.sortFrom));
+  let count = 0;
 
   const write = (cards: Card[]) => {
-    const placed = cards.slice(0, opts.capacity);
-    // Back to front from the set's spawn camera; each per-texture mesh keeps this order.
-    const sorted = placed
-      .map((c) => ({ c, d: new THREE.Vector3(...toThree(c.pos)).distanceToSquared(sortFrom) }))
+    // One mesh per set, so this back-to-front order (from the spawn camera) holds across textures.
+    const sorted = cards
+      .slice(0, opts.capacity)
+      .map((c) => ({ c, d: p.set(...toThree(c.pos)).distanceToSquared(sortFrom) }))
       .sort((a, b) => b.d - a.d);
-    for (const mesh of meshes.values()) mesh.count = 0;
-    for (const { c } of sorted) {
-      const mesh = meshes.get(c.letter)!;
+    sorted.forEach(({ c }, i) => {
       p.set(...toThree(c.pos));
       q.setFromAxisAngle(up, c.yaw);
       sc.set(c.width, c.width, c.width);
       m.compose(p, q, sc);
-      mesh.setMatrixAt(mesh.count++, m);
-    }
-    for (const mesh of meshes.values()) mesh.instanceMatrix.needsUpdate = true;
-    count = placed.length;
+      mesh.setMatrixAt(i, m);
+      aCard.setXY(i, LETTERS.indexOf(c.letter), c.opacity);
+    });
+    mesh.count = count = sorted.length;
+    mesh.instanceMatrix.needsUpdate = true;
+    aCard.needsUpdate = true;
     group.visible = opacity.value > 0 && count > 0;
   };
 
-  const set = {
+  return {
     group,
     opacity,
+    write,
     get count() {
       return count;
     },
@@ -373,18 +509,17 @@ function buildSet(opts: {
       group.visible = v > 0 && count > 0;
     },
     place(items: CardPlacement[]) {
-      const letters = assignLetters(Math.min(items.length, opts.capacity), opts.rnd,
-        billboard ? SIDE_WEIGHTS : TOP_WEIGHTS);
-      write(items.slice(0, opts.capacity).map(([x, y, z, w], i) => ({
+      const n = Math.min(items.length, opts.capacity);
+      const letters = assignLetters(n, opts.rnd, opts.billboard ? SIDE_WEIGHTS : TOP_WEIGHTS);
+      write(items.slice(0, n).map(([x, y, z, w], i) => ({
         letter: letters[i],
         pos: [x, y, z] as Vector3Tuple,
         width: w,
-        yaw: billboard ? 0 : opts.rnd() * Math.PI * 2,
+        yaw: opts.billboard ? 0 : opts.rnd() * Math.PI * 2,
+        opacity: 1,
       })));
     },
-    _write: write,
   };
-  return set;
 }
 
 export function createClouds(stage: Stage, seed = 7): Clouds {
@@ -397,20 +532,21 @@ export function createClouds(stage: Stage, seed = 7): Clouds {
   const shared = { uTime: { value: 0 }, uNoise: { value: createNoiseTexture(seed) as THREE.Texture } };
   const loader = new THREE.TextureLoader();
   const anisotropy = stage.renderer?.capabilities.getMaxAnisotropy() ?? 1;
+  const sideAtlas = loadAtlas('side', loader, anisotropy);
+  const topAtlas = loadAtlas('top', loader, anisotropy);
   const f1 = CONFIG.timeline[0].pos;
   const f2 = (CONFIG.timeline.find((k) => k.t === 0.45) ?? CONFIG.timeline[1]).pos;
 
-  const common = { shared, loader, anisotropy };
-  const deck = buildSet({ ...common, name: 'deck', kind: 'side', capacity: nDeck,
-    renderOrder: RENDER_ORDER.deck, sortFrom: f1, rnd: mulberry32(seed) });
-  const breakup = buildSet({ ...common, name: 'breakup', kind: 'top', capacity: nBreak + nFore,
-    renderOrder: RENDER_ORDER.breakup, sortFrom: f2, rnd: mulberry32(seed + 1) });
-  const veil = buildSet({ ...common, name: 'veil', kind: 'side', capacity: CONFIG.clouds.veil,
-    renderOrder: RENDER_ORDER.veil, sortFrom: CONFIG.timeline[CONFIG.timeline.length - 1].pos,
-    rnd: mulberry32(seed + 2) });
+  const deck = buildSet({ name: 'deck', billboard: true, capacity: nDeck, renderOrder: RENDER_ORDER.deck,
+    atlas: sideAtlas, shared, sortFrom: f1, rnd: mulberry32(seed) });
+  const breakup = buildSet({ name: 'breakup', billboard: false, capacity: nBreak + nFore,
+    renderOrder: RENDER_ORDER.breakup, atlas: topAtlas, shared, sortFrom: f2, rnd: mulberry32(seed + 1) });
+  const veil = buildSet({ name: 'veil', billboard: true, capacity: CONFIG.clouds.veil,
+    renderOrder: RENDER_ORDER.veil, atlas: sideAtlas, shared,
+    sortFrom: CONFIG.timeline[CONFIG.timeline.length - 1].pos, rnd: mulberry32(seed + 2) });
 
-  deck._write(deckCards(nDeck, mulberry32(seed)));
-  breakup._write(breakupCards(nBreak, nFore, mulberry32(seed + 1)));
+  deck.write(deckCards(nDeck, mulberry32(seed)));
+  breakup.write(breakupCards(nBreak, nFore, mulberry32(seed + 1)));
 
   // Mist floor under the deck, fading with the deck.
   const floor = new THREE.Mesh(
@@ -435,7 +571,7 @@ export function createClouds(stage: Stage, seed = 7): Clouds {
 
   return {
     sets: { deck, breakup, veil },
-    update(dtMs: number, _camera: THREE.Camera) {
+    update(dtMs: number) {
       shared.uTime.value += dtMs / 1000;
     },
   };
