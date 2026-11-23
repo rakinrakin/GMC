@@ -1,0 +1,126 @@
+import type { CaptionId } from './scroll';
+import { ACCURACY_NOTE } from '../config';
+
+const STYLE_ID = 'story-overlays-style';
+const CSS = `
+.story-overlays { position: fixed; inset: 0; pointer-events: none; z-index: 2; color: #4a5563;
+  font-family: "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif; font-weight: 300; }
+.story-caption { position: absolute; left: 0; right: 0; text-align: center; padding: 0 16px;
+  opacity: 0; transition: opacity 400ms ease; }
+.story-caption.is-on { opacity: 1; }
+.story-caption[data-caption="1"] { top: 22vh; }
+.story-caption[data-caption="2"] { top: 22vh; font-size: clamp(15px, 1.6vw, 20px); letter-spacing: 0.14em; text-transform: uppercase; }
+.story-caption[data-caption="3"] { top: 28px; font-family: Georgia, "Cormorant Garamond", "Times New Roman", serif; font-weight: 400; font-size: clamp(16px, 1.5vw, 20px); letter-spacing: 0.04em; }
+.story-title { margin: 0; font-family: Georgia, "Cormorant Garamond", "Times New Roman", serif; font-weight: 400;
+  font-size: clamp(32px, 5.2vw, 68px); letter-spacing: 0.01em; line-height: 1.1; }
+.story-subtitle { margin: 18px 0 0; font-size: clamp(12px, 1.1vw, 14px); letter-spacing: 0.24em; text-transform: uppercase; }
+.story-top { position: absolute; right: 24px; bottom: 24px; pointer-events: none; opacity: 0;
+  transition: opacity 400ms ease; font: inherit; font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: #4a5563; background: rgba(255,255,255,0.72); border: 1px solid rgba(74,85,99,0.35); border-radius: 999px;
+  padding: 10px 18px; cursor: pointer; }
+.story-top.is-on { opacity: 1; pointer-events: auto; }
+.story-top:hover { background: rgba(255,255,255,0.92); }
+.story-top:focus-visible { outline: 2px solid #4a5563; outline-offset: 2px; }
+/* Accuracy note: pinned map only, hidden while a zone (and its panel, bottom-left) is shown. */
+.story-note { position: absolute; left: 24px; bottom: 26px; max-width: min(440px, calc(50vw - 120px));
+  margin: 0; font-size: 11px; line-height: 1.45; letter-spacing: 0.02em; color: rgba(74,85,99,0.72);
+  opacity: 0; transition: opacity 400ms ease; }
+.story-note.is-on { opacity: 1; }
+@media (max-width: 640px) {
+  .story-note { left: 16px; right: 16px; bottom: 76px; max-width: none; font-size: 10px; }
+}
+@media (prefers-reduced-motion: reduce) { .story-caption, .story-top, .story-note { transition: none; } }
+`;
+
+export interface Overlays {
+  setCaption(c: CaptionId): void;
+  setPinned(pinned: boolean): void;
+  /** A zone is selected: the accuracy note gives way to the zone panel. */
+  setSelected(selected: boolean): void;
+  destroy(): void;
+}
+
+export function createOverlays(root: HTMLElement, opts: { onBackToTop(): void }): Overlays {
+  if (!document.getElementById(STYLE_ID)) {
+    const style = document.createElement('style');
+    style.id = STYLE_ID;
+    style.textContent = CSS;
+    document.head.appendChild(style);
+  }
+
+  const wrap = document.createElement('div');
+  wrap.className = 'story-overlays';
+
+  const caption = (id: CaptionId) => {
+    const el = document.createElement('div');
+    el.className = 'story-caption';
+    el.dataset.caption = String(id);
+    el.setAttribute('aria-hidden', 'true');
+    wrap.appendChild(el);
+    return el;
+  };
+
+  const title = caption(1);
+  const h1 = document.createElement('h1');
+  h1.className = 'story-title';
+  h1.textContent = 'Gelephu Mindfulness City';
+  const sub = document.createElement('p');
+  sub.className = 'story-subtitle';
+  sub.textContent = 'Scroll to descend';
+  title.append(h1, sub);
+  caption(2).textContent = 'Descending into Gelephu';
+  caption(3).textContent = 'Gelephu Mindfulness City';
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'story-top';
+  btn.textContent = 'Back to top';
+  btn.tabIndex = -1;
+  btn.setAttribute('aria-hidden', 'true');
+  btn.addEventListener('click', () => opts.onBackToTop());
+  wrap.appendChild(btn);
+
+  const note = document.createElement('p');
+  note.className = 'story-note';
+  note.textContent = ACCURACY_NOTE;
+  wrap.appendChild(note);
+  let pinnedNow = false;
+  let selectedNow = false;
+  // The zone panel (bottom-left) can cover this button on phones: hide it while a zone is shown.
+  const syncNote = () => {
+    note.classList.toggle('is-on', pinnedNow && !selectedNow);
+    const topOn = pinnedNow && !selectedNow;
+    btn.classList.toggle('is-on', topOn);
+    btn.tabIndex = topOn ? 0 : -1;
+    btn.setAttribute('aria-hidden', topOn ? 'false' : 'true');
+    if (!topOn && document.activeElement === btn) btn.blur();
+  };
+
+  root.appendChild(wrap);
+
+  const captions = Array.from(wrap.querySelectorAll<HTMLElement>('.story-caption'));
+  let shown: CaptionId | -1 = -1;
+
+  return {
+    setCaption(c) {
+      if (c === shown) return;
+      shown = c;
+      for (const el of captions) {
+        const on = el.dataset.caption === String(c);
+        el.classList.toggle('is-on', on);
+        el.setAttribute('aria-hidden', on ? 'false' : 'true');
+      }
+    },
+    setPinned(pinned) {
+      pinnedNow = pinned;
+      syncNote();
+    },
+    setSelected(selected) {
+      selectedNow = selected;
+      syncNote();
+    },
+    destroy() {
+      wrap.remove();
+    },
+  };
+}
