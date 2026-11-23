@@ -66,8 +66,13 @@ export function veilCards(seed = 11): CardPlacement[] {
   const rnd = mulberry32(seed);
   const u = (a: number, b: number) => a + (b - a) * rnd();
   const cards: CardPlacement[] = [];
-  for (let x = -75; x <= 75; x += 10) {
-    cards.push([x + u(-4, 4), u(96, 108), u(-1, 2), u(26, 40)]);
+  // 12 low cards along the base of the vision.
+  for (let i = 0; i < 12; i++) {
+    cards.push([-130 + i * 22 + u(-4, 4), u(120, 140), u(-1, 2), u(34, 50)]);
+  }
+  // 4 tall cards banked in front of the vision's right edge, so the photo dissolves into cloud.
+  for (let i = 0; i < 4; i++) {
+    cards.push([70 + i * 16 + u(-5, 5), u(110, 130), u(4, 12), u(55, 75)]);
   }
   return cards;
 }

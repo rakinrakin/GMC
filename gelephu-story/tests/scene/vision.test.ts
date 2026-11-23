@@ -11,10 +11,10 @@ describe('createVision', () => {
   const stage = { scene: new THREE.Scene() } as unknown as Stage;
   const v = createVision(stage, 'assets/project_spire.webp');
 
-  it('is a 150 km plane at the image aspect, centred at (−12, 125, 15.5)', () => {
+  it('is a VISION.width km plane at the image aspect, centred at VISION.center', () => {
     const p = v.mesh.geometry.parameters as { width: number; height: number };
-    expect(p.width).toBe(150);
-    expect(p.height).toBeCloseTo(150 * 1082 / 1942, 6);
+    expect(p.width).toBe(VISION.width);
+    expect(p.height).toBeCloseTo(VISION.width * 1082 / 1942, 6);
     expect(v.mesh.position.toArray()).toEqual(toThree(VISION.center));
     expect(stage.scene.children).toContain(v.mesh);
   });
@@ -40,8 +40,8 @@ describe('createVision', () => {
     expect(m.vertexShader).toContain('logdepthbuf_vertex');
     expect(m.fragmentShader).toContain('logdepthbuf_fragment');
     expect(m.fragmentShader).toContain('colorspace_fragment');
-    expect(m.fragmentShader).toContain('smoothstep(0.0, 0.16, vUv.x)');
-    expect(m.fragmentShader).toContain('smoothstep(1.0, 0.66, vUv.x)');
+    expect(m.fragmentShader).toContain('smoothstep(0.0, 0.12, vUv.x)');
+    expect(m.fragmentShader).toContain('smoothstep(1.0, 0.86, vUv.x)');
     expect(m.fragmentShader).toContain('smoothstep(0.02, 0.30, vUv.y)');
     expect(m.fragmentShader).toContain('smoothstep(1.0, 0.80, vUv.y)');
     expect(m.fragmentShader).toContain('skyKey(s)');

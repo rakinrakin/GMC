@@ -69,7 +69,7 @@ export const CONFIG: {
     {
       id: 1,
       name: 'Gelephu core',
-      view: { pos: [8, -46, 14.5], target: [9.3, 4, 7.2], fov: 33.2 },
+      view: { pos: [8, -46, 14.5], target: [9.3, 4, 12], fov: 36 },
       image: 'assets/project_spire.webp',
       copy: 'Placeholder copy for Gelephu core.',
     },

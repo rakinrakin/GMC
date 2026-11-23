@@ -5,8 +5,8 @@ import type { Stage } from './stage';
 
 /** The project vision plane, Blender-style km. Faces the "Gelephu core" camera. */
 export const VISION = {
-  center: [-12, 125, 15.5] as Vector3Tuple,
-  width: 150,
+  center: [-45, 170, 10] as Vector3Tuple,
+  width: 440,
   /** project_spire.webp is 1942 × 1082. */
   aspect: 1082 / 1942,
   haze: '#CCD6E5',
@@ -56,7 +56,7 @@ const fragmentShader = /* glsl */ `
     // The map is sampled raw (sRGB) so the key works on the photo's own values.
     vec3 s = texture2D(uMap, vUv).rgb;
     vec3 col = sRGBTransferEOTF(vec4(s, 1.0)).rgb;
-    float mask = smoothstep(0.0, 0.16, vUv.x) * smoothstep(1.0, 0.66, vUv.x)
+    float mask = smoothstep(0.0, 0.12, vUv.x) * smoothstep(1.0, 0.86, vUv.x)
       * smoothstep(0.02, 0.30, vUv.y) * smoothstep(1.0, 0.80, vUv.y);
     col = mix(col, uHaze, mix(0.18, 0.0, clamp(vUv.y / 0.8, 0.0, 1.0)));
     // Toward the edges what remains melts into our horizon colour.

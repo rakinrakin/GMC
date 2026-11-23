@@ -58,7 +58,7 @@ const visionTweens = () =>
 
 describe('zoneView', () => {
   it('uses the explicit view for Gelephu core', () => {
-    expect(zoneView(CONFIG.zones[0], centroids[1], MAP)).toEqual({ ...CONFIG.zones[0].view, fov: 33.2 });
+    expect(zoneView(CONFIG.zones[0], centroids[1], MAP)).toEqual({ ...CONFIG.zones[0].view, fov: CONFIG.zones[0].view.fov });
   });
   it('computes a view for zones that still carry the map key', () => {
     const [cx, cy] = centroids[2];
@@ -89,7 +89,7 @@ describe('createSelection', () => {
     expect(camera.position.x).toBeCloseTo(px, 3);
     expect(camera.position.y).toBeCloseTo(py, 3);
     expect(camera.position.z).toBeCloseTo(pz, 3);
-    expect(camera.fov).toBeCloseTo(33.2, 3);
+    expect(camera.fov).toBeCloseTo(CONFIG.zones[0].view.fov!, 3);
   });
 
   it('Review Focus 3: select(1) then select(2) mid-tween retargets cleanly', () => {
@@ -173,7 +173,7 @@ describe('createSelection', () => {
     expect(uniforms.uFocusCenter.value.y).toBeCloseTo(7.768, 3);
     const [px, py, pz] = toThree(CONFIG.zones[0].view.pos);
     expect(camera.position.toArray().map((v) => +v.toFixed(3))).toEqual([px, py, pz]);
-    expect(camera.fov).toBeCloseTo(33.2, 3);
+    expect(camera.fov).toBeCloseTo(CONFIG.zones[0].view.fov!, 3);
   });
 
   it('sync() while idle on the map leaves the camera to the orbit controls', () => {
@@ -218,7 +218,7 @@ describe('selection framing (portrait)', () => {
     expect(camera.position.z).toBeCloseTo(toThree(want.pos)[2], 3);
     aspect = 16 / 9;
     sel.reframe();
-    expect(camera.fov).toBeCloseTo(33.2, 3);
+    expect(camera.fov).toBeCloseTo(CONFIG.zones[0].view.fov!, 3);
     expect(camera.position.z).toBeCloseTo(toThree(CONFIG.zones[0].view.pos)[2], 3);
   });
 });
