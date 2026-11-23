@@ -15,6 +15,14 @@ export function opacityCurves(t: number): { deck: number; breakup: number; capti
   return { deck, breakup, caption };
 }
 
+/**
+ * Map canopy: fades in at the end of the descent, while the break-up clouds thin, then parts
+ * from the centre of the view as the camera settles on the map.
+ */
+export function canopyCurves(t: number): { canopy: number; opening: number } {
+  return { canopy: ramp(t, 0.55, 0.75), opening: ramp(t, 0.7, 0.97) };
+}
+
 /** Caption to show: none while a zone is selected (the vision owns the sky), else the curve's. */
 export function captionFor(t: number, selected: boolean): CaptionId {
   return selected ? 0 : opacityCurves(t).caption;

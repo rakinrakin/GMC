@@ -128,3 +128,13 @@ describe('terrain edge fade', () => {
     expect(edgeFactor(0.5, 0.03)).toBeCloseTo(edgeFactor(0.03, 0.5), 9);
   });
 });
+
+describe('cloud shadows', () => {
+  it('shares the drifting shadow uniforms with the terrain material', async () => {
+    const { shadowUniforms } = await import('../../src/scene/cloudShadows');
+    const t = new THREE.Texture();
+    const { material } = createTerrainMaterial({ color: t, normal: t, zones: t });
+    expect(material.uniforms.uShadowTime).toBe(shadowUniforms.uShadowTime);
+    expect(material.fragmentShader).toContain('applyCloudShadow(col, vWorld.xz)');
+  });
+});

@@ -15,7 +15,8 @@ import { createMapUi } from './ui/panel';
 import zonesJson from '../public/assets/zones.json';
 import { LoadingManager, Quaternion, Vector2, Vector3 } from 'three';
 import { gsap } from 'gsap';
-import { createScroll, opacityCurves, approach, captionFor } from './story/scroll';
+import { createScroll, opacityCurves, canopyCurves, approach, captionFor } from './story/scroll';
+import { shadowUniforms } from './scene/cloudShadows';
 import { createOverlays } from './story/overlays';
 import { createLoader } from './ui/loader';
 import { webglAvailable, showFallback } from './ui/fallback';
@@ -236,6 +237,8 @@ function start(app: HTMLElement) {
 
   // The camera eases toward the scroll position; reduced motion follows it exactly.
   // It starts at the current scroll position (incl. ?t= or scroll restoration), with no ease-up from 0.
+  /** Canopy opacity from the scroll position, before the selection thins it. */
+  let canopyBase = 0;
   let shownT = scroll.t();
   const applyT = (t: number) => {
     const key = fitTimelineView(sampleTimeline(CONFIG.timeline, t), t, stage.camera.aspect);
@@ -256,6 +259,9 @@ function start(app: HTMLElement) {
     const c = opacityCurves(t);
     clouds.sets.deck.setOpacity(c.deck);
     clouds.sets.breakup.setOpacity(c.breakup);
+    const cc = canopyCurves(t);
+    canopyBase = cc.canopy;
+    clouds.canopy.setOpening(cc.opening);
     overlays.setCaption(captionFor(t, selection.current() !== 0));
   };
   applyT(shownT);
@@ -314,6 +320,9 @@ function start(app: HTMLElement) {
       controls.update(dt);
     }
     hover.frame(now);
+    // A selected zone owns the sky: the canopy thins while the focus fog is on.
+    clouds.canopy.setOpacity(canopyBase * (1 - 0.8 * (terrain?.uniforms.uFocus.value ?? 0)));
+    if (!reducedMotion) shadowUniforms.uShadowTime.value += dt / 1000;
     clouds.update(dt, stage.camera);
     last = now;
     stage.renderer.render(stage.scene, stage.camera);

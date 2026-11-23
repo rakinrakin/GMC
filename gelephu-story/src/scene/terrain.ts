@@ -7,6 +7,7 @@ import zonesJson from '../../public/assets/zones.json';
 import { loadImageData } from './imageData';
 import type { Stage } from './stage';
 import { MIST_COLOR, MIST_HEIGHT } from './palette';
+import { cloudShadowGlsl, shadowUniforms } from './cloudShadows';
 
 export interface TerrainUniforms {
   uHover: { value: number };
@@ -106,6 +107,7 @@ const fragmentShader = /* glsl */ `
   varying vec2 vUv;
   varying vec3 vWorld;
   ${edgeGlsl}
+  ${cloudShadowGlsl}
 
   // x: zone colour strength, y: hover strength, for one zone-id texel.
   vec2 zoneWeights(ivec2 p, ivec2 size) {
@@ -142,6 +144,7 @@ const fragmentShader = /* glsl */ `
     vec3 shade = clamp(base / uPlaster, 0.0, 1.5);
     vec3 col = mix(base, uZoneColor * shade, w.x);
     col = mix(col, vec3(1.0), ${HOVER_LIGHTEN.toFixed(2)} * w.y);
+    col = applyCloudShadow(col, vWorld.xz);
 
     float d = distance(vWorld.xz, uFocusCenter);
     col = mix(col, uMist, uFocus * smoothstep(uFogRange.x, uFogRange.y, d) * ${FOCUS_FOG_MAX.toFixed(2)});
@@ -180,6 +183,7 @@ export function createTerrainMaterial(
       uEdgeFar: { value: EDGE_FADE_FAR },
       uMistY: { value: MIST_HEIGHT },
       uFogRange: { value: new THREE.Vector2(CONFIG.fog.near, CONFIG.fog.far) },
+      ...shadowUniforms,
     },
     vertexShader,
     fragmentShader,

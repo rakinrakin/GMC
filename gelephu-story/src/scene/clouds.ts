@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { CONFIG } from '../config';
 import { toThree, type Vector3Tuple } from '../math/coords';
 import type { Stage } from './stage';
+import { createCanopy, type Canopy } from './canopy';
 
 /** Extra break-up cards framing the F2 view (reference layout). */
 export const FOREGROUND_CARDS = 10;
@@ -70,7 +71,9 @@ export function inGmcGap(x: number, y: number, z: number, w: number): boolean {
   return inside / pts.length > GMC_GAP.maxFootprint;
 }
 
-const RENDER_ORDER = { floor: 0.9, deck: 1, breakup: 2, veil: 3 };
+const RENDER_ORDER = { floor: 0.9, deck: 1, breakup: 2, canopy: 2.5, veil: 3 };
+/** Map canopy cards (desktop; mobile uses CONFIG.mobileCloudScale). */
+export const CANOPY_CARDS = 26;
 
 /** [x, y, z (Blender-style), width km]. */
 export type CardPlacement = [number, number, number, number];
@@ -86,6 +89,8 @@ export interface CloudSet {
 
 export interface Clouds {
   sets: { deck: CloudSet; breakup: CloudSet; veil: CloudSet };
+  /** Drifting clouds over the map, parting at the centre of the view. */
+  canopy: Canopy;
   /** uDriftSpeed: noise drift per second (0 under reduced motion). */
   uniforms: { uDriftSpeed: { value: number } };
   /** Resolves once both cloud atlases are built (the first frame worth showing). */
@@ -250,7 +255,7 @@ function buildAtlasTexture(images: CanvasImageSource[], layout: AtlasLayout): TH
   return tex;
 }
 
-interface Atlas {
+export interface Atlas {
   uMap: { value: THREE.Texture };
   uRects: { value: THREE.Vector4[] };
   uAspects: { value: number[] };
@@ -644,16 +649,34 @@ export function createClouds(stage: Stage, seed = 7, options: CloudOptions = {})
   floor.frustumCulled = false;
   deck.group.add(floor);
 
-  stage.scene.add(deck.group, breakup.group, veil.group);
+  const canopy = createCanopy({
+    count: Math.round(CANOPY_CARDS * scale),
+    atlas: sideAtlas,
+    noise: shared.uNoise,
+    // Reduced motion: no drift and no churn.
+    time: options.reducedMotion ? { value: 0 } : shared.uTime,
+    drift: options.reducedMotion ? 0 : 1,
+    sortFrom: CONFIG.timeline[CONFIG.timeline.length - 1].pos,
+    rnd: mulberry32(seed + 3),
+    renderOrder: RENDER_ORDER.canopy,
+  });
+
+  stage.scene.add(deck.group, breakup.group, veil.group, canopy.group);
+  const buf = new THREE.Vector2();
 
   const ready = Promise.all([sideAtlas, topAtlas].map((a) => new Promise<void>((res) => a.onReady(res)))).then(() => {});
 
   return {
     sets: { deck, breakup, veil },
+    canopy,
     uniforms: { uDriftSpeed: shared.uDriftSpeed },
     ready,
     update(dtMs: number) {
       shared.uTime.value += dtMs / 1000;
+      if (stage.renderer) {
+        stage.renderer.getDrawingBufferSize(buf);
+        canopy.setResolution(buf.x, buf.y);
+      }
     },
   };
 }

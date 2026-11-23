@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as THREE from 'three';
 import { CONFIG } from '../../src/config';
 import { toThree } from '../../src/math/coords';
-import { createClouds, FOREGROUND_CARDS, atlasLayout, GMC_GAP, inGmcGap, footprintPoints } from '../../src/scene/clouds';
+import { createClouds, FOREGROUND_CARDS, CANOPY_CARDS, atlasLayout, GMC_GAP, inGmcGap, footprintPoints } from '../../src/scene/clouds';
+import { CANOPY } from '../../src/scene/canopy';
 import type { Stage } from '../../src/scene/stage';
 
 const loaded: string[] = [];
@@ -263,5 +264,41 @@ describe('cloud drift and readiness', () => {
   it('ready resolves once both cloud atlases have loaded', async () => {
     const c = createClouds(fakeStage('desktop'));
     await expect(c.ready).resolves.toBeUndefined();
+  });
+});
+
+describe('map canopy', () => {
+  it('builds CANOPY_CARDS wide, flat cards inside the canopy band (halved on mobile)', () => {
+    const { canopy } = createClouds(fakeStage('desktop'));
+    expect(canopy.count).toBe(CANOPY_CARDS);
+    expect(createClouds(fakeStage('mobile')).canopy.count).toBe(Math.round(CANOPY_CARDS * CONFIG.mobileCloudScale));
+    const m = mesh(canopy.group);
+    const mat = new THREE.Matrix4();
+    const p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
+    for (let i = 0; i < m.count; i++) {
+      m.getMatrixAt(i, mat);
+      mat.decompose(p, q, s);
+      // three Y is Blender z (height); squash keeps every card wider than tall.
+      expect(p.y).toBeGreaterThanOrEqual(CANOPY.boundsZ[0]);
+      expect(p.y).toBeLessThanOrEqual(CANOPY.boundsZ[1]);
+      expect(s.y).toBeLessThan(s.x);
+    }
+  });
+
+  it('starts hidden and follows setOpacity / setOpening', () => {
+    const { canopy } = createClouds(fakeStage('desktop'));
+    const u = (mesh(canopy.group).material as THREE.ShaderMaterial).uniforms;
+    expect(canopy.group.visible).toBe(false);
+    canopy.setOpacity(0.5);
+    canopy.setOpening(0.25);
+    expect(canopy.group.visible).toBe(true);
+    expect(u.uOpacity.value).toBe(0.5);
+    expect(u.uOpening.value).toBe(0.25);
+  });
+
+  it('holds still under reduced motion', () => {
+    const { canopy } = createClouds(fakeStage('desktop'), 7, { reducedMotion: true });
+    const u = (mesh(canopy.group).material as THREE.ShaderMaterial).uniforms;
+    expect(u.uDrift.value).toBe(0);
   });
 });

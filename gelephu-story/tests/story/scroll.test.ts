@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { CONFIG, ACCURACY_NOTE } from '../../src/config';
-import { createScroll, opacityCurves, approach, captionFor } from '../../src/story/scroll';
+import { createScroll, opacityCurves, canopyCurves, approach, captionFor } from '../../src/story/scroll';
 import { createOverlays } from '../../src/story/overlays';
 
 describe('opacityCurves', () => {
@@ -473,5 +473,14 @@ describe('createOverlays accuracy note', () => {
     o.setPinned(false);
     expect(note.classList.contains('is-on')).toBe(false);
     o.destroy();
+  });
+});
+
+describe('canopyCurves', () => {
+  it('is absent during the descent, in by 0.75 and fully open on the map', () => {
+    expect(canopyCurves(0.4)).toEqual({ canopy: 0, opening: 0 });
+    expect(canopyCurves(0.75).canopy).toBe(1);
+    expect(canopyCurves(0.7).opening).toBe(0);
+    expect(canopyCurves(1)).toEqual({ canopy: 1, opening: 1 });
   });
 });
